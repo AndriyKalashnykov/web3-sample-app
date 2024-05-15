@@ -1,5 +1,5 @@
 # https://hub.docker.com/_/node/tags
-FROM node:18.12.1-alpine AS builder
+FROM node:22.1-alpine AS builder
 RUN apk --no-cache add git
 RUN npm --global install npm@latest
 RUN npm --global install pnpm
