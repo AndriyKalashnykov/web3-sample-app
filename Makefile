@@ -1,5 +1,9 @@
 .DEFAULT_GOAL := help
-VERSION := $(shell cat ./src/components/Layout.tsx | sed -n "s#const Version =\s*'\(.*\)'#\1#p" )
+
+CURRENTTAG:=$(shell git describe --tags --abbrev=0)
+NEWTAG ?= $(shell bash -c 'read -p "Please provide a new tag (currnet tag - ${CURRENTTAG}): " newtag; echo $$newtag')
+
+
 
 #help: @ List available tasks
 help:
@@ -52,14 +56,16 @@ ifndef VERSION
 endif
 	@echo -n ""
 
-#release: @ Create and push a new tag
-release: check-version
-	@echo -n "Are you sure to create and push ${VERSION} tag? [y/N] " && read ans && [ $${ans:-N} = y ]
-	git commit -a -s -m "Cut ${VERSION} release"
-	git tag ${VERSION}
-	git push origin ${VERSION}
-	git push
-	echo "Done."
+release: ## create and push a new tag
+	$(eval NT=$(NEWTAG))
+	@echo -n "Are you sure to create and push ${NT} tag? [y/N] " && read ans && [ $${ans:-N} = y ]
+	@echo ${NT} > ./version.txt
+	@git add -A
+	@git commit -a -s -m "Cut ${NT} release"
+	@git tag ${NT}
+	@git push origin ${NT}
+	@git push
+	@echo "Done."
 
 #kind-deploy: @ Deploy to a local KinD cluster
 kind-deploy: image-build
