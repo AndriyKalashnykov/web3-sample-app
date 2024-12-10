@@ -5,9 +5,8 @@
 - [curl](https://help.ubidots.com/en/articles/2165289-learn-how-to-install-run-curl-on-windows-macosx-linux)
 - [nvm](https://github.com/nvm-sh/nvm#install--update-script)
   ```bash
-  nvm install v18.10.0
-  nvm use v18.10.0
-  nvm alias default v18.10.0
+  nvm install --lts
+  nvm use --lts
   npm install npm --global
   ```
 - [pnpm](https://pnpm.io/installation)

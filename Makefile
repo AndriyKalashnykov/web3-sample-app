@@ -6,7 +6,7 @@ help:
 	@clear
 	@echo "Usage: make COMMAND"
 	@echo "Commands :"
-	@grep -E '[a-zA-Z\.\-]+:.*?@ .*$$' $(MAKEFILE_LIST)| tr -d '#' | awk 'BEGIN {FS = ":.*?@ "}; {printf "\033[32m%-13s\033[0m - %s\n", $$1, $$2}'
+	@grep -E '[a-zA-Z\.\-]+:.*?@ .*$$' $(MAKEFILE_LIST)| tr -d '#' | awk 'BEGIN {FS = ":.*?@ "}; {printf "\033[32m%-16s\033[0m - %s\n", $$1, $$2}'
 
 #clean: @ Cleanup
 clean:
@@ -30,7 +30,11 @@ run: install
 
 #image-build: @ Build a Docker image
 image-build: install
-	docker build -t web3-sample-app:$(VERSION) .
+	docker buildx build --load -t web3-sample-app:$(VERSION) .
+
+#image-build-prod: @ Build a PROD Docker image
+image-build-prod: install
+	docker buildx build --load -t web3-sample-app:$(VERSION) -f Dockerfile.prod .
 
 #image-run: @ Run a Docker image
 image-run:
