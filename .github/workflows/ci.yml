@@ -59,7 +59,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.OWNER_LC }}/dlib-docker
+          images: ${{ env.REGISTRY }}/${{ env.OWNER_LC }}/web3-sample-app
           flavor: |
             latest=true
           tags: |
