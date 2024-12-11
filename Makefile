@@ -92,3 +92,8 @@ kind-redeploy:
 
 # pod logs
 # kubectl logs -n web3 web3-sample-app-569598dd94-qvg4m
+
+dt: ## delete tag
+	rm -f version.txt
+	git push --delete origin v0.0.1
+	git tag --delete v0.0.1
