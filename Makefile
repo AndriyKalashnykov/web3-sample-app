@@ -34,15 +34,15 @@ run: install
 
 #image-build: @ Build a Docker image
 image-build: install
-	docker buildx build --load -t web3-sample-app:$(VERSION) .
+	docker buildx build --load -t web3-sample-app:$(CURRENTTAG) .
 
 #image-build-prod: @ Build a PROD Docker image
 image-build-prod: install
-	docker buildx build --load -t web3-sample-app:$(VERSION) -f Dockerfile.prod .
+	docker buildx build --load -t web3-sample-app:$(CURRENTTAG) -f Dockerfile.prod .
 
 #image-run: @ Run a Docker image
-image-run:
-	@docker run --rm -p 8080:8080 --name web3 web3-sample-app:$(VERSION)
+image-run: image-stop
+	@docker run --rm -p 8080:8080 --name web3 web3-sample-app:$(CURRENTTAG)
 #-e VITE_RPCENDPOINT=https://rpc.ankr.com/eth
 
 #image-stop: @ Stop a Docker image
