@@ -38,9 +38,10 @@ const AccountForm = () => {
 
   useEffect(() => {
     getBlock();
+    getBalance();
   }, []);
 
-  const getBalance = async (event: any) => {
+  const getBalance = async (event?: any) => {
     if (ethers.utils.isAddress(destinationAddress)) {
       setDisable(true);
     }
@@ -76,7 +77,7 @@ const AccountForm = () => {
     setDisable(false);
   };
 
-  const handleChange = (event) => {
+  const handleChange = (event?) => {
     try {
       setAsset(event.target.value);
       getBalance(event);
@@ -100,6 +101,9 @@ const AccountForm = () => {
           className="w-96 border form-control mb-5 text-sm text-neutral-700"
           onChange={(event) => {
             setDestinationAddress(event.target.value);
+          }}
+          onKeyUp={() =>{
+            getBalance();
           }}
         />
         {/*<select value={asset} disabled={disable} name="selectAsset" id="selectAsset" className="text-neutral-700"*/}
