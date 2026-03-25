@@ -36,6 +36,10 @@ clean:
 install:
 	pnpm install
 
+#ci-install: @ Install NodeJS dependencies (CI, frozen lockfile)
+ci-install:
+	pnpm install --frozen-lockfile
+
 #build: @ Build
 build: install
 	pnpm build

@@ -1,37 +1,44 @@
-# Web3 sample app
+# Web3 Sample App
+
+Web3 frontend that queries ETH and DAI balances from the Ethereum blockchain.
 
 ## Requirements
 
-- [Node.js >= 22](https://nodejs.org/)
+- [Node.js >= 22](https://nodejs.org/) (version pinned in `.node-version`)
 - [pnpm](https://pnpm.io/installation)
   ```bash
   npm install -g pnpm
   ```
-- [kind >= 0.16.0](https://kind.sigs.k8s.io/docs/user/quick-start/#installation) (for Kubernetes deployment)
-- [kubectl](https://kubernetes.io/docs/tasks/tools/install-kubectl-linux/) (for Kubernetes deployment)
+
+For Kubernetes deployment only:
+- [kind >= 0.16.0](https://kind.sigs.k8s.io/docs/user/quick-start/#installation)
+- [kubectl](https://kubernetes.io/docs/tasks/tools/install-kubectl-linux/)
 
 ## Tech Stack
 
-- React 19, TypeScript, [Vite 8](https://github.com/vitejs/vite)
-- [ethers.js v6](https://github.com/ethers-io/ethers.js)
+- [React 19](https://react.dev/) + [TypeScript 5.8](https://www.typescriptlang.org/)
+- [Vite 8](https://vite.dev/) - build tool
+- [ethers.js v6](https://docs.ethers.org/v6/) - Ethereum library
 - [MUI v7](https://mui.com/) - Material UI components
-- [TailwindCSS v4](https://github.com/tailwindlabs/tailwindcss) - CSS framework
+- [Tailwind CSS v4](https://tailwindcss.com/) - utility-first CSS
 - [Rematch](https://rematchjs.org/) - Redux state management
-- i18n via i18next
+- [i18next](https://www.i18next.com/) - internationalization
 
-## Help
+## Quick Start
 
 ```bash
-make help
+make install    # install dependencies
+make run        # start dev server on http://localhost:8080
 ```
 
+## Available Make Targets
+
 ```text
-Usage: make COMMAND
-Commands :
 help             - List available tasks
 deps             - Install prerequisite tools (act, pnpm, etc.)
 clean            - Cleanup
 install          - Install NodeJS dependencies
+ci-install       - Install NodeJS dependencies (CI, frozen lockfile)
 build            - Build
 lint             - Run prettier check
 format           - Run prettier format
@@ -48,75 +55,73 @@ kind-undeploy    - Undeploy from a local KinD cluster
 kind-redeploy    - Redeploy to a local KinD cluster
 ```
 
-## Usage
-
-```bash
-make run
-```
-
 ## CI/CD
 
-The GitHub Actions workflow runs on every push and PR:
-- **build** job: installs dependencies and builds the project (`make install && make build`)
-- **docker-image** job: builds and pushes a Docker image to GHCR (only on tag push)
+GitHub Actions workflows:
 
-To run the CI workflow locally:
+### `ci.yml` - Build & Docker
+
+Triggers: push to `main`, tags `v*`, pull requests, manual dispatch.
+
+| Job | Runs on | What it does |
+|-----|---------|--------------|
+| **build** | every trigger | `ci-install` -> `lint` -> `build` |
+| **docker-image** | tag push only | builds multi-arch image, pushes to GHCR |
+
+All actions are pinned to commit SHAs for supply chain safety. CI uses `pnpm install --frozen-lockfile` to ensure reproducible builds.
+
+### `cleanup-images.yml` - GHCR Cleanup
+
+Runs weekly (Sunday 3 AM UTC) to delete old untagged container images, keeping the 5 most recent versions.
+
+### Run CI locally
 
 ```bash
 make ci-run
 ```
 
-This uses [act](https://github.com/nektos/act) to execute the GitHub Actions workflow. The `deps` target will install `act` automatically if not present.
+Uses [act](https://github.com/nektos/act) to run the GitHub Actions workflow locally. The `deps` target installs `act` if not present.
 
-## Kubernetes deployment
+## Kubernetes Deployment
 
-### Deploy using docker image from public repository
-
-#### Deploy workload
+### From public GHCR image
 
 ```bash
+# deploy
 kubectl apply -f ./k8s --namespace=web3 --validate=false
-```
 
-#### Get workload's IP
-
-```bash
+# get external IP
 service_ip=$(kubectl get services web3-sample-app -n web3 -o jsonpath="{.status.loadBalancer.ingress[0].ip}")
-xdg-open "http://${service_ip}:8080" > /dev/null 2>&1
-```
+xdg-open "http://${service_ip}:8080"
 
-#### Delete workload
-
-```bash
+# delete
 kubectl delete -f ./k8s --namespace=web3
 ```
 
-### Deploy to local Kind cluster
+### Local Kind cluster
 
 ```bash
-make kind-deploy
-```
-
-### Undeploy from local Kind cluster
-
-```bash
-make kind-undeploy
+make kind-deploy     # build image + deploy
+make kind-undeploy   # remove workload
+make kind-redeploy   # update running deployment
 ```
 
 ## Release
 
-- Update field [Version](./src/components/Layout.tsx#L25)
+1. Update the version constant in [`src/components/Layout.tsx`](./src/components/Layout.tsx#L25):
+   ```ts
+   const Version = 'vX.Y.Z'
+   ```
 
-  ```text
-  const Version = "vX.Y.Z"
-  ```
+2. Create and push the tag:
+   ```bash
+   make release
+   ```
+   This commits the tag, pushes it, and triggers the Docker image build.
 
-- Run `release` target
-  ```bash
-  make release
-  ```
+## Testing
 
-Valid eth address to test:
+Valid Ethereum address for manual testing:
 
 ```
 0xeB2629a2734e272Bcc07BDA959863f316F4bD4Cf
