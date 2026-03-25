@@ -48,7 +48,7 @@
     },
     {
       "description": "Group all type definition updates",
-      "matchPackagePatterns": ["^@types/"],
+      "matchPackageNames": ["/^@types//"],
       "groupName": "type-definitions",
       "automerge": true
     },
