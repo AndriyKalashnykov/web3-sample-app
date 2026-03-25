@@ -1,6 +1,6 @@
 // AccountForm.tsx
-import React, { useEffect, useState } from "react";
-import { t } from "i18next";
+import React, { useEffect, useState } from 'react'
+import { t } from 'i18next'
 import {
   DAIBalance,
   DAIblock,
@@ -9,101 +9,100 @@ import {
   getDAIBalance,
   getETHBalance,
   getProvider,
-  provider
-} from "@/service/ether";
-import { ethers } from "ethers";
-import Config from "@/assets/config.json";
-const ERRMSG = "Could not retrieve info from blockchain using\n";
-
+  provider,
+} from '@/service/ether'
+import { ethers } from 'ethers'
+import Config from '@/assets/config.json'
+const ERRMSG = 'Could not retrieve info from blockchain using\n'
 
 const AccountForm = () => {
-  const delay = (ms) => new Promise((res) => setTimeout(res, ms));
+  const delay = (ms) => new Promise((res) => setTimeout(res, ms))
 
-  const [destinationAddress, setDestinationAddress] = useState("");
-  const [balance, setBalance] = useState(0);
-  const [block, setBlock] = useState(0);
-  const [asset, setAsset] = useState("ETH");
-  const [disable, setDisable] = useState(false);
+  const [destinationAddress, setDestinationAddress] = useState('')
+  const [balance, setBalance] = useState(0)
+  const [block, setBlock] = useState(0)
+  const [asset, setAsset] = useState('ETH')
+  const [disable, setDisable] = useState(false)
 
   const getBlock = async () => {
     try {
-      getProvider();
-      await provider.getBlockNumber();
-      const block = await provider.getBlockNumber();
-      setBlock(block);
+      getProvider()
+      await provider.getBlockNumber()
+      const block = await provider.getBlockNumber()
+      setBlock(block)
     } catch (error) {
-      setBlock(0);
+      setBlock(0)
     }
-  };
+  }
 
   useEffect(() => {
-    getBlock();
-    getBalance();
-  }, []);
+    getBlock()
+    getBalance()
+  }, [])
 
   const getBalance = async (event?: any) => {
-    if (ethers.utils.isAddress(destinationAddress)) {
-      setDisable(true);
+    if (ethers.isAddress(destinationAddress)) {
+      setDisable(true)
     }
-    setBalance(0);
-    setBlock(0);
+    setBalance(0)
+    setBlock(0)
     let assetCbValue: string = (
-      document.getElementById("selectAsset") as HTMLInputElement
-    ).value;
+      document.getElementById('selectAsset') as HTMLInputElement
+    ).value
 
-    if (assetCbValue == "ETH") {
+    if (assetCbValue == 'ETH') {
       try {
-        getProvider();
-        await provider.getBlockNumber();
-        await getETHBalance(destinationAddress);
-        setBalance(ETHbalance);
-        setBlock(ETHblock);
+        getProvider()
+        await provider.getBlockNumber()
+        await getETHBalance(destinationAddress)
+        setBalance(ETHbalance)
+        setBlock(ETHblock)
       } catch (e) {
-        console.error(e);
+        console.error(e)
         alert(ERRMSG + Config.RPCENDPOINT)
       }
     } else {
       try {
-        getProvider();
-        await provider.getBlockNumber();
-        await getDAIBalance(destinationAddress);
-        setBalance(DAIBalance);
-        setBlock(DAIblock);
+        getProvider()
+        await provider.getBlockNumber()
+        await getDAIBalance(destinationAddress)
+        setBalance(DAIBalance)
+        setBlock(DAIblock)
       } catch (e) {
-        console.error(e);
+        console.error(e)
         alert(ERRMSG + Config.RPCENDPOINT)
       }
     }
-    setDisable(false);
-  };
+    setDisable(false)
+  }
 
   const handleChange = (event?) => {
     try {
-      setAsset(event.target.value);
-      getBalance(event);
+      setAsset(event.target.value)
+      getBalance(event)
     } catch (e) {
-      console.log(e.message);
-      if (typeof e === "string") {
-        e.toUpperCase();
+      console.log(e.message)
+      if (typeof e === 'string') {
+        e.toUpperCase()
       } else if (e instanceof Error) {
-        console.log(e.message);
+        console.log(e.message)
       }
     }
-  };
+  }
 
   return (
     <div className="p-5 shadow text-left flex flex-col">
       <div className="pt-1 font-normal">
         <input
           disabled={disable}
-          placeholder={t("address")}
+          placeholder={t('address')}
           value={destinationAddress}
           className="w-96 border form-control mb-5 text-sm text-neutral-700"
           onChange={(event) => {
-            setDestinationAddress(event.target.value);
+            setDestinationAddress(event.target.value)
           }}
-          onKeyUp={() =>{
-            getBalance();
+          onKeyUp={() => {
+            getBalance()
           }}
         />
         {/*<select value={asset} disabled={disable} name="selectAsset" id="selectAsset" className="text-neutral-700"*/}
@@ -123,17 +122,17 @@ const AccountForm = () => {
 
       <div className="pt-1 font-bold text-neutral-700">
         <>
-          {t("balance")}: {ethers.utils.formatEther(balance)}
+          {t('balance')}: {ethers.formatEther(balance)}
         </>
       </div>
       <div className="pt-1 font-bold text-neutral-700">
         <>
-          {t("block")}: {block}
+          {t('block')}: {block}
         </>
       </div>
       <div className="pt-4">
         <button
-          style={{ float: "right" }}
+          style={{ float: 'right' }}
           disabled={disable}
           id="GetBalanceButton"
           name="GetBalanceButton"
@@ -144,7 +143,7 @@ const AccountForm = () => {
         </button>
       </div>
     </div>
-  );
-};
+  )
+}
 
-export default AccountForm;
+export default AccountForm
