@@ -2,50 +2,50 @@
 
 ## Requirements
 
-- [curl](https://help.ubidots.com/en/articles/2165289-learn-how-to-install-run-curl-on-windows-macosx-linux)
-- [nvm](https://github.com/nvm-sh/nvm#install--update-script)
-  ```bash
-  nvm install --lts
-  nvm use --lts
-  npm install npm --global
-  ```
+- [Node.js >= 22](https://nodejs.org/)
 - [pnpm](https://pnpm.io/installation)
   ```bash
   npm install -g pnpm
   ```
-- [kind >=0.16.0](https://kind.sigs.k8s.io/docs/user/quick-start/#installation)
-- [kubectl](https://kubernetes.io/docs/tasks/tools/install-kubectl-linux/)
+- [kind >= 0.16.0](https://kind.sigs.k8s.io/docs/user/quick-start/#installation) (for Kubernetes deployment)
+- [kubectl](https://kubernetes.io/docs/tasks/tools/install-kubectl-linux/) (for Kubernetes deployment)
 
-## Features & Plugins
+## Tech Stack
 
-- React, TypeScript, [Vite](https://github.com/vitejs/vite)
-- [ethers.js](https://github.com/ethers-io/ethers.js)
-- i18n, store - works out-of-box
-- [TailwindCSS](https://github.com/tailwindlabs/tailwindcss) - CSS framework for rapid UI development
+- React 19, TypeScript, [Vite 8](https://github.com/vitejs/vite)
+- [ethers.js v6](https://github.com/ethers-io/ethers.js)
+- [MUI v7](https://mui.com/) - Material UI components
+- [TailwindCSS v4](https://github.com/tailwindlabs/tailwindcss) - CSS framework
+- [Rematch](https://rematchjs.org/) - Redux state management
+- i18n via i18next
 
 ## Help
 
 ```bash
-$ make help
+make help
 ```
 
 ```text
 Usage: make COMMAND
 Commands :
-help          - List available tasks
-clean         - Cleanup
-install       - Install NodeJS dependencies
-build         - Build
-upgrade       - Upgrade dependencies
-run           - Run
-image-build   - Build a Docker image
-image-run     - Run a Docker image
-image-stop    - Stop a Docker image
-check-version - Ensure VERSION variable is set
-release       - Create and push a new tag
-kind-deploy   - Deploy to a local KinD cluster
-kind-undeploy - Undeploy from a local KinD cluster
-kind-redeploy - Redeploy to a local KinD cluster
+help             - List available tasks
+deps             - Install prerequisite tools (act, pnpm, etc.)
+clean            - Cleanup
+install          - Install NodeJS dependencies
+build            - Build
+lint             - Run prettier check
+format           - Run prettier format
+upgrade          - Upgrade dependencies
+run              - Run
+image-build      - Build a Docker image
+image-build-prod - Build a PROD Docker image
+image-run        - Run a Docker image
+image-stop       - Stop a Docker image
+ci-run           - Run GitHub workflow locally using act
+check-version    - Ensure VERSION variable is set
+kind-deploy      - Deploy to a local KinD cluster
+kind-undeploy    - Undeploy from a local KinD cluster
+kind-redeploy    - Redeploy to a local KinD cluster
 ```
 
 ## Usage
@@ -53,6 +53,20 @@ kind-redeploy - Redeploy to a local KinD cluster
 ```bash
 make run
 ```
+
+## CI/CD
+
+The GitHub Actions workflow runs on every push and PR:
+- **build** job: installs dependencies and builds the project (`make install && make build`)
+- **docker-image** job: builds and pushes a Docker image to GHCR (only on tag push)
+
+To run the CI workflow locally:
+
+```bash
+make ci-run
+```
+
+This uses [act](https://github.com/nektos/act) to execute the GitHub Actions workflow. The `deps` target will install `act` automatically if not present.
 
 ## Kubernetes deployment
 
