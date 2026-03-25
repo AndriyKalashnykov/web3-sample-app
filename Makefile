@@ -3,7 +3,7 @@
 CURRENTTAG:=$(shell git describe --tags --abbrev=0)
 NEWTAG ?= $(shell bash -c 'read -p "Please provide a new tag (currnet tag - ${CURRENTTAG}): " newtag; echo $$newtag')
 
-
+ACT_VERSION := 0.2.74
 
 #help: @ List available tasks
 help:
@@ -11,6 +11,22 @@ help:
 	@echo "Usage: make COMMAND"
 	@echo "Commands :"
 	@grep -E '[a-zA-Z\.\-]+:.*?@ .*$$' $(MAKEFILE_LIST)| tr -d '#' | awk 'BEGIN {FS = ":.*?@ "}; {printf "\033[32m%-16s\033[0m - %s\n", $$1, $$2}'
+
+#deps: @ Install prerequisite tools (act, pnpm, etc.)
+deps:
+	@command -v act >/dev/null 2>&1 || { \
+		echo "Installing act $(ACT_VERSION)..."; \
+		curl -sSfL https://raw.githubusercontent.com/nektos/act/master/install.sh | sudo bash -s -- -b /usr/local/bin v$(ACT_VERSION); \
+	}
+	@command -v pnpm >/dev/null 2>&1 || { \
+		echo "Installing pnpm..."; \
+		npm install -g pnpm; \
+	}
+	@command -v node >/dev/null 2>&1 || { \
+		echo "Error: node is not installed. Please install Node.js >= 22"; \
+		exit 1; \
+	}
+	@echo "All dependencies are available."
 
 #clean: @ Cleanup
 clean:
@@ -23,6 +39,14 @@ install:
 #build: @ Build
 build: install
 	pnpm build
+
+#lint: @ Run prettier check
+lint:
+	pnpm prettier:diff
+
+#format: @ Run prettier format
+format:
+	pnpm prettier
 
 #upgrade: @ Upgrade dependencies
 upgrade:
@@ -43,11 +67,14 @@ image-build-prod: install
 #image-run: @ Run a Docker image
 image-run: image-stop
 	@docker run --rm -p 8080:8080 --name web3 web3-sample-app:$(CURRENTTAG)
-#-e VITE_RPCENDPOINT=https://rpc.ankr.com/eth
 
 #image-stop: @ Stop a Docker image
 image-stop:
 	@docker stop web3 || true
+
+#ci-run: @ Run GitHub workflow locally using act
+ci-run: deps
+	act -j build --container-architecture linux/amd64
 
 #check-version: @ Ensure VERSION variable is set
 check-version:

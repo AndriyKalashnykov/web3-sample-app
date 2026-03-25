@@ -16,7 +16,34 @@ permissions:
 
 jobs:
 
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: latest
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: make install
+
+      - name: Build
+        run: make build
+
   docker-image:
+    needs: build
+    if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -25,20 +52,17 @@ jobs:
       REGISTRY: ghcr.io
 
     steps:
-
-      # debug
-      - run: echo "🎉 The job was automatically triggered by a ${{ github.event_name }} event from ${{ github.actor }}."
-      - run: echo "🐧 This job is now running on a ${{ runner.os }} server hosted by GitHub!"
-      - run: echo "🔎 The name of your branch is ${{ github.ref }} and your repository is ${{ github.repository }}."
-
       - name: Checkout
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+
       - name: Convert owner to lower case
         run: |
           echo "OWNER_LC=${OWNER,,}" >>${GITHUB_ENV}
@@ -52,12 +76,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GH_ACCESS_TOKEN }}
 
-      - name: GitHub Tag Name example
-        run: |
-          echo "Tag name from GITHUB_REF_NAME: $GITHUB_REF_NAME"
-          echo "Tag name from github.ref_name: ${{  github.ref_name }}"
-
-      - name: Docker meta Debian
+      - name: Docker meta
         id: meta
         uses: docker/metadata-action@v5
         with:
@@ -90,12 +109,12 @@ jobs:
             BUILDER_IMAGE=ubuntu:24.10
             DLIB_VERSION=19.24
             GCC_VERSION=12.4.0
-          push: ${{ github.ref_type == 'tag' }}
+          push: true
           provenance: false
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Output  container image digest
+      - name: Output container image digest
         run: echo ${{ steps.docker_build.outputs.digest }}
