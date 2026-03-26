@@ -12,7 +12,7 @@ import {
   provider,
 } from '@/service/ether'
 import { ethers } from 'ethers'
-import Config from '@/assets/config.json'
+const RPCENDPOINT = import.meta.env.VITE_RPCENDPOINT ?? 'not configured'
 const ERRMSG = 'Could not retrieve info from blockchain using\n'
 
 const AccountForm = () => {
@@ -59,7 +59,7 @@ const AccountForm = () => {
         setBlock(ETHblock)
       } catch (e) {
         console.error(e)
-        alert(ERRMSG + Config.RPCENDPOINT)
+        alert(ERRMSG + RPCENDPOINT)
       }
     } else {
       try {
@@ -70,7 +70,7 @@ const AccountForm = () => {
         setBlock(DAIblock)
       } catch (e) {
         console.error(e)
-        alert(ERRMSG + Config.RPCENDPOINT)
+        alert(ERRMSG + RPCENDPOINT)
       }
     }
     setDisable(false)

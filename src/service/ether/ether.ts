@@ -1,5 +1,4 @@
 import { ethers } from 'ethers'
-import Config from '@/assets/config.json'
 
 export var provider
 export var ETHbalance
