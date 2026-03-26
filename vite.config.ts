@@ -19,6 +19,21 @@ export default defineConfig({
         drop_debugger: true,
       },
     },
+    rolldownOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('node_modules/react') || id.includes('node_modules/react-dom') || id.includes('node_modules/react-router')) {
+            return 'vendor-react'
+          }
+          if (id.includes('node_modules/@mui') || id.includes('node_modules/@emotion')) {
+            return 'vendor-mui'
+          }
+          if (id.includes('node_modules/ethers')) {
+            return 'vendor-ethers'
+          }
+        },
+      },
+    },
   },
   server: {
     port: 8080,

@@ -1,3 +1,4 @@
+import { Suspense } from 'react'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import routes from '@/router'
 import '@/locale'
@@ -13,15 +14,17 @@ const App = () => {
         </header>
         <main>
           <BrowserRouter>
-            <Routes>
-              {routes.map((route) => (
-                <Route
-                  key={route.path}
-                  path={route.path}
-                  element={<route.component />}
-                />
-              ))}
-            </Routes>
+            <Suspense>
+              <Routes>
+                {routes.map((route) => (
+                  <Route
+                    key={route.path}
+                    path={route.path}
+                    element={<route.component />}
+                  />
+                ))}
+              </Routes>
+            </Suspense>
           </BrowserRouter>
         </main>
       </div>
