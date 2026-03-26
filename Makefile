@@ -1,9 +1,15 @@
 .DEFAULT_GOAL := help
 
-APP_NAME    := web3-sample-app
-CURRENTTAG  := $(shell git describe --tags --abbrev=0 2>/dev/null || echo "dev")
-ACT_VERSION := 0.2.86
-NVM_DIR     := $(HOME)/.nvm
+APP_NAME       := web3-sample-app
+CURRENTTAG     := $(shell git describe --tags --abbrev=0 2>/dev/null || echo "dev")
+LOCAL_BIN      := $(HOME)/.local/bin
+NVM_DIR        := $(HOME)/.nvm
+NVM_VERSION    := 0.40.4
+PNPM_VERSION   := 10.33.0
+ACT_VERSION    := 0.2.86
+KUBECTL_VERSION := 1.35.3
+KIND_VERSION   := 0.31.0
+YQ_VERSION     := 4.52.5
 
 #help: @ List available tasks
 help:
@@ -18,8 +24,8 @@ deps:
 		exit 1; \
 	}
 	@if [ ! -d "$(NVM_DIR)" ]; then \
-		echo "Installing nvm..."; \
-		curl -sSfL https://raw.githubusercontent.com/nvm-sh/nvm/master/install.sh | bash; \
+		echo "Installing nvm $(NVM_VERSION)..."; \
+		curl -sSfL https://raw.githubusercontent.com/nvm-sh/nvm/v$(NVM_VERSION)/install.sh | bash; \
 	fi
 	@bash -c 'source $(NVM_DIR)/nvm.sh && \
 		if ! command -v node >/dev/null 2>&1 || [ "$$(node -v | cut -d. -f1 | tr -d v)" -lt 22 ]; then \
@@ -28,33 +34,31 @@ deps:
 			nvm use --lts; \
 		fi'
 	@command -v pnpm >/dev/null 2>&1 || { \
-		echo "Installing pnpm..."; \
-		npm install -g pnpm; \
+		echo "Installing pnpm $(PNPM_VERSION)..."; \
+		npm install -g pnpm@$(PNPM_VERSION); \
 	}
 	@command -v act >/dev/null 2>&1 || { \
 		echo "Installing act $(ACT_VERSION)..."; \
-		mkdir -p $$HOME/.local/bin; \
-		curl -sSfL https://raw.githubusercontent.com/nektos/act/master/install.sh | bash -s -- -b $$HOME/.local/bin v$(ACT_VERSION); \
+		mkdir -p $(LOCAL_BIN); \
+		curl -sSfL https://raw.githubusercontent.com/nektos/act/master/install.sh | bash -s -- -b $(LOCAL_BIN) v$(ACT_VERSION); \
 	}
 	@command -v kubectl >/dev/null 2>&1 || { \
-		echo "Installing kubectl..."; \
-		mkdir -p $$HOME/.local/bin; \
-		curl -sSfL "https://dl.k8s.io/release/$$(curl -sSfL https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" -o $$HOME/.local/bin/kubectl; \
-		chmod +x $$HOME/.local/bin/kubectl; \
+		echo "Installing kubectl $(KUBECTL_VERSION)..."; \
+		mkdir -p $(LOCAL_BIN); \
+		curl -sSfL "https://dl.k8s.io/release/v$(KUBECTL_VERSION)/bin/linux/amd64/kubectl" -o $(LOCAL_BIN)/kubectl; \
+		chmod +x $(LOCAL_BIN)/kubectl; \
 	}
 	@command -v kind >/dev/null 2>&1 || { \
-		echo "Installing kind..."; \
-		mkdir -p $$HOME/.local/bin; \
-		KIND_VERSION=$$(curl -sSfL https://api.github.com/repos/kubernetes-sigs/kind/releases/latest | grep '"tag_name"' | cut -d'"' -f4); \
-		curl -sSfL "https://github.com/kubernetes-sigs/kind/releases/download/$${KIND_VERSION}/kind-linux-amd64" -o $$HOME/.local/bin/kind; \
-		chmod +x $$HOME/.local/bin/kind; \
+		echo "Installing kind $(KIND_VERSION)..."; \
+		mkdir -p $(LOCAL_BIN); \
+		curl -sSfL "https://github.com/kubernetes-sigs/kind/releases/download/v$(KIND_VERSION)/kind-linux-amd64" -o $(LOCAL_BIN)/kind; \
+		chmod +x $(LOCAL_BIN)/kind; \
 	}
 	@command -v yq >/dev/null 2>&1 || { \
-		echo "Installing yq..."; \
-		mkdir -p $$HOME/.local/bin; \
-		YQ_VERSION=$$(curl -sSfL https://api.github.com/repos/mikefarah/yq/releases/latest | grep '"tag_name"' | cut -d'"' -f4); \
-		curl -sSfL "https://github.com/mikefarah/yq/releases/download/$${YQ_VERSION}/yq_linux_amd64" -o $$HOME/.local/bin/yq; \
-		chmod +x $$HOME/.local/bin/yq; \
+		echo "Installing yq $(YQ_VERSION)..."; \
+		mkdir -p $(LOCAL_BIN); \
+		curl -sSfL "https://github.com/mikefarah/yq/releases/download/v$(YQ_VERSION)/yq_linux_amd64" -o $(LOCAL_BIN)/yq; \
+		chmod +x $(LOCAL_BIN)/yq; \
 	}
 	@echo "All dependencies are available."
 
