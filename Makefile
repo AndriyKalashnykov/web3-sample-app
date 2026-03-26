@@ -128,6 +128,9 @@ image-run: image-stop
 image-stop:
 	@docker stop web3 || true
 
+#ci: @ Run full CI pipeline (install, lint, build, test)
+ci: ci-install lint build test
+
 #ci-run: @ Run GitHub workflow locally using act
 ci-run: deps
 	@act -j build --container-architecture linux/amd64
@@ -176,5 +179,5 @@ kind-redeploy: deps image-build
 
 .PHONY: help deps clean install ci-install build lint format check upgrade \
 	test test.watch test.coverage run \
-	image-build image-build-prod image-run image-stop ci-run release delete-tag \
+	image-build image-build-prod image-run image-stop ci ci-run release delete-tag \
 	kind-deploy kind-undeploy kind-redeploy
