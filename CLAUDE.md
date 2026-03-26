@@ -13,12 +13,23 @@ make build        # tsc + vite build (runs install first)
 make lint         # prettier --check
 make format       # prettier --write
 make check        # lint + build in one command
-make run          # dev server at http://localhost:8080
-make ci-install   # pnpm install --frozen-lockfile (CI only)
-make ci-run       # run CI workflow locally via act
+make test          # run tests once (vitest)
+make test.watch    # run tests in watch mode
+make test.coverage # run tests with coverage report
+make run           # dev server at http://localhost:8080
+make ci-install    # pnpm install --frozen-lockfile (CI only)
+make ci-run        # run CI workflow locally via act
 ```
 
-There are no tests in this project. The `build` target (which runs `tsc`) serves as the type-checking gate.
+## Testing
+
+Vitest with React Testing Library and jsdom. Config in `vitest.config.ts`, global setup in `src/test/setup.ts`.
+
+- **Unit tests**: `src/store/models/__tests__/` (Rematch models), `src/service/ether/__tests__/` (ether service with mocked ethers.js)
+- **Integration tests**: `src/components/__tests__/` (AccountForm, Counter, App — rendered with providers)
+- **Test utilities**: `src/test/test-utils.tsx` exports `renderWithProviders` (wraps components in Redux Provider, MUI ThemeProvider, MemoryRouter)
+
+The ether service tests mock `ethers.JsonRpcProvider` and `ethers.Contract` to avoid real network calls. Component tests mock the `@/service/ether` module entirely.
 
 ## Tool Versions
 
@@ -56,7 +67,7 @@ Vite 8 with oxc minifier (not terser). Console and debugger statements are strip
 
 ## CI/CD
 
-- **ci.yml**: `ci-install` → `lint` → `build` on every push/PR. Docker image build+push to GHCR only on tag push (uses `Dockerfile.prod`).
+- **ci.yml**: `ci-install` → `lint` → `test` → `build` on every push/PR. Docker image build+push to GHCR only on tag push (uses `Dockerfile.prod`).
 - **cleanup-runs.yml**: Weekly cleanup of old workflow runs (keeps 5, deletes after 7 days).
 - **cleanup-images.yml**: Weekly cleanup of untagged GHCR images (keeps 5 most recent).
 - All GitHub Actions pinned to commit SHAs. Renovate manages dependency updates with automerge for non-major.

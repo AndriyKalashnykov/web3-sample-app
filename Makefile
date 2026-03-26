@@ -96,9 +96,21 @@ check: deps lint build
 upgrade: deps
 	@pnpm upgrade
 
+#test: @ Run tests
+test: install
+	@pnpm test
+
+#test.watch: @ Run tests in watch mode
+test.watch: install
+	@pnpm test:watch
+
+#test.coverage: @ Run tests with coverage report
+test.coverage: install
+	@pnpm test:coverage
+
 #run: @ Start dev server on port 8080
 run: install
-	@VITE_RPCENDPOINT=https://rpc.ankr.com/eth pnpm dev
+	@pnpm dev
 
 #image-build: @ Build a Docker image
 image-build: deps
@@ -162,6 +174,7 @@ kind-redeploy: deps image-build
 	kubectl apply -f ./k8s/cm.yaml --namespace=web3 && \
 	yq eval '.spec.template.spec.containers[0].image = "$(APP_NAME):$(CURRENTTAG)"' ./k8s/deployment.yaml | kubectl apply --namespace=web3 -f -
 
-.PHONY: help deps clean install ci-install build lint format check upgrade run \
+.PHONY: help deps clean install ci-install build lint format check upgrade \
+	test test.watch test.coverage run \
 	image-build image-build-prod image-run image-stop ci-run release delete-tag \
 	kind-deploy kind-undeploy kind-redeploy
