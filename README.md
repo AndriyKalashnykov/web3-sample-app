@@ -4,20 +4,20 @@ Web3 frontend that queries ETH and DAI balances from the Ethereum blockchain.
 
 ## Requirements
 
-- [Node.js >= 22](https://nodejs.org/) (version pinned in `.node-version`)
-- [pnpm](https://pnpm.io/installation)
-  ```bash
-  npm install -g pnpm
-  ```
+All prerequisites can be installed automatically:
 
-For Kubernetes deployment only:
-- [kind >= 0.16.0](https://kind.sigs.k8s.io/docs/user/quick-start/#installation)
-- [kubectl](https://kubernetes.io/docs/tasks/tools/install-kubectl-linux/)
+```bash
+make deps
+```
+
+This installs (if missing): [nvm](https://github.com/nvm-sh/nvm), Node.js LTS, [pnpm](https://pnpm.io/), [act](https://github.com/nektos/act), [kubectl](https://kubernetes.io/docs/tasks/tools/), [kind](https://kind.sigs.k8s.io/), [yq](https://github.com/mikefarah/yq). Requires [git](https://git-scm.com/) and [Docker](https://docs.docker.com/get-docker/) to be pre-installed.
+
+Node.js version is managed via `.node-version` (`lts/*`). Tools install to `~/.local/bin` (no sudo required).
 
 ## Tech Stack
 
-- [React 19](https://react.dev/) + [TypeScript 5.8](https://www.typescriptlang.org/)
-- [Vite 8](https://vite.dev/) - build tool
+- [React 19](https://react.dev/) + [TypeScript 5.x](https://www.typescriptlang.org/)
+- [Vite 8](https://vite.dev/) - build tool (oxc minifier)
 - [ethers.js v6](https://docs.ethers.org/v6/) - Ethereum library
 - [MUI v7](https://mui.com/) - Material UI components
 - [Tailwind CSS v4](https://tailwindcss.com/) - utility-first CSS
@@ -27,7 +27,8 @@ For Kubernetes deployment only:
 ## Quick Start
 
 ```bash
-make install    # install dependencies
+make deps       # install all prerequisite tools
+make install    # install Node.js dependencies
 make run        # start dev server on http://localhost:8080
 ```
 
@@ -35,7 +36,7 @@ make run        # start dev server on http://localhost:8080
 
 ```text
 help             - List available tasks
-deps             - Install prerequisite tools (act, pnpm, etc.)
+deps             - Install prerequisite tools (nvm, node, pnpm, act, git, kubectl, kind, yq)
 clean            - Cleanup
 install          - Install NodeJS dependencies
 ci-install       - Install NodeJS dependencies (CI, frozen lockfile)
@@ -59,6 +60,8 @@ kind-redeploy    - Redeploy to a local KinD cluster
 
 `make install` skips `pnpm install` when `node_modules` is already up-to-date with `package.json` and `pnpm-lock.yaml`.
 
+Tool versions are pinned as constants at the top of the Makefile for reproducibility.
+
 ## CI/CD
 
 GitHub Actions workflows:
@@ -78,6 +81,10 @@ All actions are pinned to commit SHAs for supply chain safety. CI uses `pnpm ins
 
 Runs weekly (Sunday 3 AM UTC) to delete old untagged container images, keeping the 5 most recent versions.
 
+### `cleanup-runs.yml` - Workflow Run Cleanup
+
+Runs weekly (Sunday midnight UTC) to delete workflow runs older than 7 days, keeping at least 5 runs.
+
 ### Run CI locally
 
 ```bash
@@ -85,6 +92,13 @@ make ci-run
 ```
 
 Uses [act](https://github.com/nektos/act) to run the GitHub Actions workflow locally. The `deps` target installs `act` if not present.
+
+### Dependency Management
+
+[Renovate](https://docs.renovatebot.com/) manages dependency updates:
+- Non-major updates automerge after CI passes
+- Major updates require manual review (labeled `breaking`)
+- TypeScript pinned to `<6.0.0` (ecosystem not ready for 6.x)
 
 ## Kubernetes Deployment
 
