@@ -42,18 +42,22 @@ ci-install       - Install NodeJS dependencies (CI, frozen lockfile)
 build            - Build
 lint             - Run prettier check
 format           - Run prettier format
+check            - Run lint and build
 upgrade          - Upgrade dependencies
-run              - Run
+run              - Start dev server on port 8080
 image-build      - Build a Docker image
 image-build-prod - Build a PROD Docker image
 image-run        - Run a Docker image
 image-stop       - Stop a Docker image
 ci-run           - Run GitHub workflow locally using act
-check-version    - Ensure VERSION variable is set
+release          - Create and push a new tag
+delete-tag       - Delete a tag locally and remotely (usage: make delete-tag TAG=v0.0.1)
 kind-deploy      - Deploy to a local KinD cluster
 kind-undeploy    - Undeploy from a local KinD cluster
 kind-redeploy    - Redeploy to a local KinD cluster
 ```
+
+`make install` skips `pnpm install` when `node_modules` is already up-to-date with `package.json` and `pnpm-lock.yaml`.
 
 ## CI/CD
 
@@ -118,6 +122,11 @@ make kind-redeploy   # update running deployment
    make release
    ```
    This commits the tag, pushes it, and triggers the Docker image build.
+
+3. To delete a tag:
+   ```bash
+   make delete-tag TAG=v0.0.1
+   ```
 
 ## Testing
 
