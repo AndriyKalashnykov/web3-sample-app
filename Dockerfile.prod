@@ -4,10 +4,8 @@ RUN apk --no-cache add git
 RUN npm --global install pnpm
 
 WORKDIR /app
-COPY package.json ./
-COPY pnpm-lock.yaml ./
-COPY .npmrc ./
-RUN pnpm install
+COPY package.json pnpm-lock.yaml .npmrc ./
+RUN pnpm install --frozen-lockfile
 COPY . .
 
 # ENV JQ_VERSION=1.6

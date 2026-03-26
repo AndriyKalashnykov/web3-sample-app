@@ -60,7 +60,6 @@ Vite 8 with oxc minifier (not terser). Console and debugger statements are strip
 - **cleanup-runs.yml**: Weekly cleanup of old workflow runs (keeps 5, deletes after 7 days).
 - **cleanup-images.yml**: Weekly cleanup of untagged GHCR images (keeps 5 most recent).
 - All GitHub Actions pinned to commit SHAs. Renovate manages dependency updates with automerge for non-major.
-- TypeScript is pinned to `<6.0.0` in `renovate.json` — do not upgrade to TS 6.x.
 
 ## Conventions
 

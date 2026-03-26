@@ -1,12 +1,11 @@
 # https://hub.docker.com/_/node/tags
-FROM node:24.14-alpine AS builder
+FROM node:24.14-alpine
 RUN apk --no-cache add git
-RUN npm --global install npm@latest
 RUN npm --global install pnpm
 
 WORKDIR /app
+COPY package.json pnpm-lock.yaml .npmrc ./
+RUN pnpm install --frozen-lockfile
 COPY . .
-#RUN rm .env
-RUN pnpm install
 EXPOSE 8080
 CMD ["pnpm", "run", "dev"]

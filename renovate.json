@@ -51,11 +51,6 @@
       "matchPackageNames": ["/^@types//"],
       "groupName": "type-definitions",
       "automerge": true
-    },
-    {
-      "description": "Pin TypeScript to 5.x (ecosystem not ready for 6.x)",
-      "matchPackageNames": ["typescript"],
-      "allowedVersions": "<6.0.0"
     }
   ]
 }
