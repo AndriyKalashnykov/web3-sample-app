@@ -104,12 +104,8 @@ jobs:
         uses: docker/build-push-action@d08e5c354a6adb9ed34480a06d141179aa583294 # v7
         with:
           context: .
-          file: ./Dockerfile
+          file: ./Dockerfile.prod
           platforms: linux/arm64, linux/amd64
-          build-args: |
-            BUILDER_IMAGE=ubuntu:24.10
-            DLIB_VERSION=19.24
-            GCC_VERSION=12.4.0
           push: true
           provenance: false
           tags: ${{ steps.meta.outputs.tags }}
@@ -118,4 +114,4 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Output container image digest
-        run: echo ${{ steps.docker_build.outputs.digest }}
+        run: echo "${{ steps.docker_build.outputs.digest }}"
