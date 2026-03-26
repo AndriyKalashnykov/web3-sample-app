@@ -70,43 +70,43 @@ clean:
 install: node_modules
 
 node_modules: package.json pnpm-lock.yaml
-	pnpm install
+	@pnpm install
 	@touch node_modules
 
 #ci-install: @ Install NodeJS dependencies (CI, frozen lockfile)
-ci-install:
-	pnpm install --frozen-lockfile
+ci-install: deps
+	@pnpm install --frozen-lockfile
 
 #build: @ Build
 build: install
-	pnpm build
+	@pnpm build
 
 #lint: @ Run prettier check
-lint:
-	pnpm prettier:diff
+lint: deps
+	@pnpm prettier:diff
 
 #format: @ Run prettier format
-format:
-	pnpm prettier
+format: deps
+	@pnpm prettier
 
 #check: @ Run lint and build
-check: lint build
+check: deps lint build
 
 #upgrade: @ Upgrade dependencies
-upgrade:
-	pnpm upgrade
+upgrade: deps
+	@pnpm upgrade
 
 #run: @ Start dev server on port 8080
 run: install
 	@VITE_RPCENDPOINT=https://rpc.ankr.com/eth pnpm dev
 
 #image-build: @ Build a Docker image
-image-build:
-	docker buildx build --load -t $(APP_NAME):$(CURRENTTAG) .
+image-build: deps
+	@docker buildx build --load -t $(APP_NAME):$(CURRENTTAG) .
 
 #image-build-prod: @ Build a PROD Docker image
-image-build-prod:
-	docker buildx build --load -t $(APP_NAME):$(CURRENTTAG) -f Dockerfile.prod .
+image-build-prod: deps
+	@docker buildx build --load -t $(APP_NAME):$(CURRENTTAG) -f Dockerfile.prod .
 
 #image-run: @ Run a Docker image
 image-run: image-stop
@@ -118,11 +118,12 @@ image-stop:
 
 #ci-run: @ Run GitHub workflow locally using act
 ci-run: deps
-	act -j build --container-architecture linux/amd64
+	@act -j build --container-architecture linux/amd64
 
 #release: @ Create and push a new tag
-release:
+release: deps
 	@bash -c 'read -p "New tag (current: $(CURRENTTAG)): " newtag && \
+		echo "$$newtag" | grep -qE "^v[0-9]+\.[0-9]+\.[0-9]+$$" || { echo "Error: Tag must match vN.N.N"; exit 1; } && \
 		echo -n "Create and push $$newtag? [y/N] " && read ans && [ "$${ans:-N}" = y ] && \
 		echo $$newtag > ./version.txt && \
 		git add -A && \
@@ -133,16 +134,16 @@ release:
 		echo "Done."'
 
 #delete-tag: @ Delete a tag locally and remotely (usage: make delete-tag TAG=v0.0.1)
-delete-tag:
+delete-tag: deps
 ifndef TAG
 	$(error TAG is undefined. Usage: make delete-tag TAG=v0.0.1)
 endif
-	git push --delete origin $(TAG)
-	git tag --delete $(TAG)
+	@git push --delete origin $(TAG)
+	@git tag --delete $(TAG)
 	@echo "Deleted tag $(TAG)"
 
 #kind-deploy: @ Deploy to a local KinD cluster
-kind-deploy: image-build
+kind-deploy: deps image-build
 	@kind load docker-image $(APP_NAME):$(CURRENTTAG) -n kind && \
 	kubectl apply -f ./k8s/ns.yaml && \
 	kubectl apply -f ./k8s/cm.yaml --namespace=web3 && \
@@ -150,13 +151,13 @@ kind-deploy: image-build
 	kubectl apply -f ./k8s/service.yaml --namespace=web3
 
 #kind-undeploy: @ Undeploy from a local KinD cluster
-kind-undeploy:
+kind-undeploy: deps
 	@kubectl delete -f ./k8s/deployment.yaml --namespace=web3 --ignore-not-found=true && \
 	kubectl delete -f ./k8s/cm.yaml --namespace=web3 --ignore-not-found=true && \
 	kubectl delete -f ./k8s/ns.yaml --ignore-not-found=true
 
 #kind-redeploy: @ Redeploy to a local KinD cluster
-kind-redeploy:
+kind-redeploy: deps image-build
 	@kubectl delete -f ./k8s/deployment.yaml --namespace=web3 --ignore-not-found=true && \
 	kubectl apply -f ./k8s/cm.yaml --namespace=web3 && \
 	yq eval '.spec.template.spec.containers[0].image = "$(APP_NAME):$(CURRENTTAG)"' ./k8s/deployment.yaml | kubectl apply --namespace=web3 -f -

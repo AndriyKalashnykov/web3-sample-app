@@ -16,7 +16,7 @@ Node.js version is managed via `.node-version` (`lts/*`). Tools install to `~/.l
 
 ## Tech Stack
 
-- [React 19](https://react.dev/) + [TypeScript 5.x](https://www.typescriptlang.org/)
+- [React 19](https://react.dev/) + [TypeScript 6.x](https://www.typescriptlang.org/)
 - [Vite 8](https://vite.dev/) - build tool (oxc minifier)
 - [ethers.js v6](https://docs.ethers.org/v6/) - Ethereum library
 - [MUI v7](https://mui.com/) - Material UI components
@@ -98,7 +98,7 @@ Uses [act](https://github.com/nektos/act) to run the GitHub Actions workflow loc
 [Renovate](https://docs.renovatebot.com/) manages dependency updates:
 - Non-major updates automerge after CI passes
 - Major updates require manual review (labeled `breaking`)
-- TypeScript pinned to `<6.0.0` (ecosystem not ready for 6.x)
+- TypeScript pinned to `~6.x` (major updates require manual review)
 
 ## Kubernetes Deployment
 
@@ -135,7 +135,7 @@ make kind-redeploy   # update running deployment
    ```bash
    make release
    ```
-   This commits the tag, pushes it, and triggers the Docker image build.
+   This validates the semver format (`vN.N.N`), commits the tag, pushes it, and triggers the Docker image build.
 
 3. To delete a tag:
    ```bash

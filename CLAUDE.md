@@ -56,7 +56,7 @@ Vite 8 with oxc minifier (not terser). Console and debugger statements are strip
 
 ## CI/CD
 
-- **ci.yml**: `ci-install` → `lint` → `build` on every push/PR. Docker image build+push to GHCR only on tag push.
+- **ci.yml**: `ci-install` → `lint` → `build` on every push/PR. Docker image build+push to GHCR only on tag push (uses `Dockerfile.prod`).
 - **cleanup-runs.yml**: Weekly cleanup of old workflow runs (keeps 5, deletes after 7 days).
 - **cleanup-images.yml**: Weekly cleanup of untagged GHCR images (keeps 5 most recent).
 - All GitHub Actions pinned to commit SHAs. Renovate manages dependency updates with automerge for non-major.
@@ -75,6 +75,7 @@ Vite 8 with oxc minifier (not terser). Console and debugger statements are strip
 - TypeScript: **6.x** with `moduleResolution: "bundler"` (no `baseUrl`, no `esModuleInterop`)
 - Formatting: **prettier** only (no eslint)
 - Commit messages: conventional commits (`feat:`, `fix:`, `chore:`, `ci:`, `refactor:`, `docs:`, `perf:`)
+- Release: `make release` validates semver format (`vN.N.N`) before tagging
 - Vulnerable transitive deps fixed via `pnpm.overrides` in `package.json`
 
 ## Custom Commands
