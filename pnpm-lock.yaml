@@ -84,9 +84,6 @@ importers:
       tailwindcss:
         specifier: ^4.2.2
         version: 4.2.2
-      terser:
-        specifier: ^5.46.1
-        version: 5.46.1
       typescript:
         specifier: ^5.8.3
         version: 5.9.3
@@ -1378,6 +1375,7 @@ snapshots:
     dependencies:
       '@jridgewell/gen-mapping': 0.3.13
       '@jridgewell/trace-mapping': 0.3.31
+    optional: true
 
   '@jridgewell/sourcemap-codec@1.5.5': {}
 
@@ -1652,7 +1650,8 @@ snapshots:
       '@rolldown/pluginutils': 1.0.0-rc.7
       vite: 8.0.2(@types/node@25.5.0)(jiti@2.6.1)(terser@5.46.1)(yaml@2.6.1)
 
-  acorn@8.16.0: {}
+  acorn@8.16.0:
+    optional: true
 
   aes-js@4.0.0-beta.5: {}
 
@@ -1672,7 +1671,8 @@ snapshots:
       cosmiconfig: 7.1.0
       resolve: 1.22.11
 
-  buffer-from@1.1.2: {}
+  buffer-from@1.1.2:
+    optional: true
 
   call-bind-apply-helpers@1.0.2:
     dependencies:
@@ -1687,7 +1687,8 @@ snapshots:
     dependencies:
       delayed-stream: 1.0.0
 
-  commander@2.20.3: {}
+  commander@2.20.3:
+    optional: true
 
   convert-source-map@1.9.0: {}
 
@@ -2083,10 +2084,12 @@ snapshots:
     dependencies:
       buffer-from: 1.1.2
       source-map: 0.6.1
+    optional: true
 
   source-map@0.5.7: {}
 
-  source-map@0.6.1: {}
+  source-map@0.6.1:
+    optional: true
 
   stylis@4.2.0: {}
 
@@ -2102,6 +2105,7 @@ snapshots:
       acorn: 8.16.0
       commander: 2.20.3
       source-map-support: 0.5.21
+    optional: true
 
   tinyexec@0.3.2: {}
 

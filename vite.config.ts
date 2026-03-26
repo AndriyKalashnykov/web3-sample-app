@@ -13,8 +13,7 @@ export default defineConfig({
   },
   build: {
     target: 'esnext',
-    minify: 'terser',
-    terserOptions: {
+    oxc: {
       compress: {
         drop_console: true,
         drop_debugger: true,
