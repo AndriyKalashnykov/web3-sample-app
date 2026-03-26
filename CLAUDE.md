@@ -52,7 +52,7 @@ Tailwind CSS v4 with `@tailwindcss/postcss`. Custom colors (`primary`, `secondar
 
 ### Build
 
-Vite 8 with oxc minifier (not terser). Console and debugger statements are stripped in production via `build.oxc.compress` in `vite.config.ts`.
+Vite 8 with oxc minifier (not terser). Console and debugger statements are stripped in production via `build.oxc.compress` in `vite.config.ts`. Vendor chunks are split via `rolldownOptions.output.manualChunks` (function, not object — Rolldown requirement) into `vendor-react`, `vendor-mui`, and `vendor-ethers`. Routes are lazy-loaded with `React.lazy()` + `<Suspense>`.
 
 ## CI/CD
 
@@ -61,9 +61,23 @@ Vite 8 with oxc minifier (not terser). Console and debugger statements are strip
 - **cleanup-images.yml**: Weekly cleanup of untagged GHCR images (keeps 5 most recent).
 - All GitHub Actions pinned to commit SHAs. Renovate manages dependency updates with automerge for non-major.
 
+## Docker
+
+- **Dockerfile**: Dev image (Node alpine + pnpm dev server on port 8080)
+- **Dockerfile.prod**: Multi-stage build (Node builder → nginx-unprivileged on port 8080)
+- **`.dockerignore`**: Excludes `node_modules`, `dist`, `.git`
+- Both Dockerfiles use `pnpm install --frozen-lockfile` and copy lockfiles before source for layer caching
+
 ## Conventions
 
 - Package manager: **pnpm** (not npm/yarn)
 - Node.js version: **LTS** via `.node-version` (not hardcoded)
+- TypeScript: **6.x** with `moduleResolution: "bundler"` (no `baseUrl`, no `esModuleInterop`)
 - Formatting: **prettier** only (no eslint)
 - Commit messages: conventional commits (`feat:`, `fix:`, `chore:`, `ci:`, `refactor:`, `docs:`, `perf:`)
+- Vulnerable transitive deps fixed via `pnpm.overrides` in `package.json`
+
+## Custom Commands
+
+- `/ci-workflow` — GitHub Actions: analyze runs, fix failures, update deps, verify builds
+- `/makefile` — Makefile authoring conventions and patterns
