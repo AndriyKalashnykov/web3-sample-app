@@ -45,9 +45,7 @@ describe('ether service', () => {
   })
 
   it('getETHBalance returns block number and balance', async () => {
-    const { getProvider, getETHBalance } = await import(
-      '@/service/ether/ether'
-    )
+    const { getProvider, getETHBalance } = await import('@/service/ether/ether')
     await getProvider()
     const result = await getETHBalance(
       '0x1234567890abcdef1234567890abcdef12345678',
@@ -61,18 +59,14 @@ describe('ether service', () => {
 
   it('getETHBalance handles provider errors gracefully', async () => {
     mockGetBlockNumber.mockRejectedValueOnce(new Error('network error'))
-    const { getProvider, getETHBalance } = await import(
-      '@/service/ether/ether'
-    )
+    const { getProvider, getETHBalance } = await import('@/service/ether/ether')
     await getProvider()
     const result = await getETHBalance('0x1234')
     expect(result).toBeUndefined()
   })
 
   it('getDAIBalance returns token info and balance', async () => {
-    const { getProvider, getDAIBalance } = await import(
-      '@/service/ether/ether'
-    )
+    const { getProvider, getDAIBalance } = await import('@/service/ether/ether')
     await getProvider()
     const result = await getDAIBalance(
       '0x1234567890abcdef1234567890abcdef12345678',
@@ -87,9 +81,7 @@ describe('ether service', () => {
 
   it('getDAIBalance handles contract errors gracefully', async () => {
     mockContractName.mockRejectedValueOnce(new Error('contract error'))
-    const { getProvider, getDAIBalance } = await import(
-      '@/service/ether/ether'
-    )
+    const { getProvider, getDAIBalance } = await import('@/service/ether/ether')
     await getProvider()
     const result = await getDAIBalance('0x1234')
     expect(result).toBeUndefined()

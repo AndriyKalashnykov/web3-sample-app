@@ -1,9 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import {
-  renderWithProviders,
-  screen,
-  userEvent,
-} from '@/test/test-utils'
+import { renderWithProviders, screen, userEvent } from '@/test/test-utils'
 import Counter from '@/components/Counter'
 
 describe('Counter component', () => {

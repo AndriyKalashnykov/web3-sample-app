@@ -137,10 +137,7 @@ describe('AccountForm component', () => {
     const user = userEvent.setup()
 
     const input = screen.getByPlaceholderText('Address')
-    await user.type(
-      input,
-      '0xeB2629a2734e272Bcc07BDA959863f316F4bD4Cf',
-    )
+    await user.type(input, '0xeB2629a2734e272Bcc07BDA959863f316F4bD4Cf')
     await user.click(screen.getByText('Get Balance'))
 
     await waitFor(() => {
