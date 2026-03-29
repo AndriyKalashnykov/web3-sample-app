@@ -89,7 +89,15 @@ Vite 8 with oxc minifier (not terser). Console and debugger statements are strip
 - Release: `make release` validates semver format (`vN.N.N`) before tagging
 - Vulnerable transitive deps fixed via `pnpm.overrides` in `package.json`
 
-## Custom Commands
+## Skills
 
-- `/ci-workflow` — GitHub Actions: analyze runs, fix failures, update deps, verify builds
-- `/makefile` — Makefile authoring conventions and patterns
+Use the following skills when working on related files:
+
+| File(s) | Skill |
+|---------|-------|
+| `Makefile` | `/makefile` |
+| `renovate.json` | `/renovate` |
+| `README.md` | `/readme` |
+| `.github/workflows/*.yml` | `/ci-workflow` |
+
+When spawning subagents, always pass conventions from the respective skill into the agent's prompt.
