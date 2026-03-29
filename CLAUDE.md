@@ -10,7 +10,7 @@ All commands go through the Makefile. Use `make help` to list targets.
 make deps         # install all prerequisite tools (nvm, node, pnpm, act, kubectl, kind, yq)
 make install      # pnpm install (skips if node_modules is current)
 make build        # tsc + vite build (runs install first)
-make lint         # prettier --check
+make lint         # prettier --check + hadolint Dockerfile linting
 make format       # prettier --write
 make check        # lint + build in one command
 make test          # run tests once (vitest)
@@ -67,7 +67,7 @@ Vite 8 with oxc minifier (not terser). Console and debugger statements are strip
 
 ## CI/CD
 
-- **ci.yml**: `ci-install` → `lint` → `test` → `build` on every push/PR. Docker image build+push to GHCR only on tag push (uses `Dockerfile.prod`).
+- **ci.yml**: `ci-install` → `lint` → `test` → `build` on every push/PR. Docker image build+push to GHCR only on tag push (uses `Dockerfile.prod`). Docker job gated with `startsWith(github.ref, 'refs/tags/')`.
 - **cleanup-runs.yml**: Weekly cleanup of old workflow runs (keeps 5, deletes after 7 days).
 - **cleanup-images.yml**: Weekly cleanup of untagged GHCR images (keeps 5 most recent).
 - All GitHub Actions pinned to commit SHAs. Renovate manages dependency updates with automerge for non-major.
@@ -77,6 +77,7 @@ Vite 8 with oxc minifier (not terser). Console and debugger statements are strip
 - **Dockerfile**: Dev image (Node alpine + pnpm dev server on port 8080)
 - **Dockerfile.prod**: Multi-stage build (Node builder → nginx-unprivileged on port 8080)
 - **`.dockerignore`**: Excludes `node_modules`, `dist`, `.git`
+- **`.hadolint.yaml`**: Configures hadolint rule ignores for Dockerfile linting
 - Both Dockerfiles use `pnpm install --frozen-lockfile` and copy lockfiles before source for layer caching
 
 ## Conventions
@@ -85,6 +86,7 @@ Vite 8 with oxc minifier (not terser). Console and debugger statements are strip
 - Node.js version: **LTS** via `.node-version` (not hardcoded)
 - TypeScript: **6.x** with `moduleResolution: "bundler"` (no `baseUrl`, no `esModuleInterop`)
 - Formatting: **prettier** only (no eslint)
+- Dockerfile linting: **hadolint** via `make lint` (installed by `deps-hadolint` target)
 - Commit messages: conventional commits (`feat:`, `fix:`, `chore:`, `ci:`, `refactor:`, `docs:`, `perf:`)
 - Release: `make release` validates semver format (`vN.N.N`) before tagging
 - Vulnerable transitive deps fixed via `pnpm.overrides` in `package.json`

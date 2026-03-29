@@ -7,6 +7,7 @@ NVM_DIR        := $(HOME)/.nvm
 NVM_VERSION    := 0.40.4
 PNPM_VERSION   := 10.33.0
 ACT_VERSION    := 0.2.86
+HADOLINT_VERSION := 2.12.0
 KUBECTL_VERSION := 1.35.3
 KIND_VERSION   := 0.31.0
 YQ_VERSION     := 4.52.5
@@ -62,6 +63,15 @@ deps:
 	}
 	@echo "All dependencies are available."
 
+#deps-hadolint: @ Install hadolint for Dockerfile linting
+deps-hadolint:
+	@command -v hadolint >/dev/null 2>&1 || { echo "Installing hadolint $(HADOLINT_VERSION)..."; \
+		curl -sSfL -o /tmp/hadolint https://github.com/hadolint/hadolint/releases/download/v$(HADOLINT_VERSION)/hadolint-Linux-x86_64 && \
+		mkdir -p $(LOCAL_BIN) && \
+		install -m 755 /tmp/hadolint $(LOCAL_BIN)/hadolint && \
+		rm -f /tmp/hadolint; \
+	}
+
 #clean: @ Cleanup
 clean:
 	@rm -rf node_modules/ dist/
@@ -81,9 +91,11 @@ ci-install: deps
 build: install
 	@pnpm build
 
-#lint: @ Run prettier check
-lint: deps
+#lint: @ Run prettier check and Dockerfile linting
+lint: deps deps-hadolint
 	@pnpm prettier:diff
+	@hadolint Dockerfile
+	@hadolint Dockerfile.prod
 
 #format: @ Run prettier format
 format: deps
@@ -128,8 +140,8 @@ image-run: image-stop
 image-stop:
 	@docker stop web3 || true
 
-#ci: @ Run full CI pipeline (install, lint, build, test)
-ci: ci-install lint build test
+#ci: @ Run full CI pipeline (install, lint, test, build)
+ci: ci-install lint test build
 
 #ci-run: @ Run GitHub workflow locally using act
 ci-run: deps
@@ -181,7 +193,7 @@ kind-redeploy: deps image-build
 renovate-validate:
 	@npx --yes renovate --platform=local
 
-.PHONY: help deps clean install ci-install build lint format check upgrade \
+.PHONY: help deps deps-hadolint clean install ci-install build lint format check upgrade \
 	test test.watch test.coverage run \
 	image-build image-build-prod image-run image-stop ci ci-run release delete-tag \
 	kind-deploy kind-undeploy kind-redeploy renovate-validate
