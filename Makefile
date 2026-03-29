@@ -177,7 +177,11 @@ kind-redeploy: deps image-build
 	kubectl apply -f ./k8s/cm.yaml --namespace=web3 && \
 	yq eval '.spec.template.spec.containers[0].image = "$(APP_NAME):$(CURRENTTAG)"' ./k8s/deployment.yaml | kubectl apply --namespace=web3 -f -
 
+#renovate-validate: @ Validate Renovate configuration
+renovate-validate:
+	@npx --yes renovate --platform=local
+
 .PHONY: help deps clean install ci-install build lint format check upgrade \
 	test test.watch test.coverage run \
 	image-build image-build-prod image-run image-stop ci ci-run release delete-tag \
-	kind-deploy kind-undeploy kind-redeploy
+	kind-deploy kind-undeploy kind-redeploy renovate-validate

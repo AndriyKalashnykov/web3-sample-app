@@ -1,54 +1,55 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
-    "config:recommended",
-    "helpers:pinGitHubActionDigests",
-    ":automergeDigest",
-    ":automergePatch",
-    ":automergeMinor",
-    ":semanticCommits",
-    ":separateMultipleMajorReleases",
-    "schedule:nonOfficeHours"
+    "config:best-practices",
+    ":semanticCommitType(chore)"
   ],
+  "commitMessagePrefix": "chore(all): ",
+  "commitMessageAction": "update",
+  "commitBody": "Signed-off-by: Renovate Bot <bot@renovateapp.com>",
   "labels": ["dependencies"],
   "prConcurrentLimit": 50,
+  "prHourlyLimit": 0,
+  "platformAutomerge": true,
   "automerge": true,
   "automergeType": "pr",
-  "platformAutomerge": true,
+  "automergeStrategy": "squash",
   "ignoreTests": false,
   "rollbackPrs": true,
   "vulnerabilityAlerts": {
     "enabled": true,
-    "labels": ["security"]
+    "labels": ["security"],
+    "automerge": true,
+    "minimumReleaseAge": "0 days"
+  },
+  "lockFileMaintenance": {
+    "enabled": true,
+    "automerge": true
+  },
+  "npm": {
+    "minimumReleaseAge": "3 days"
   },
   "packageRules": [
     {
-      "description": "Automerge all non-major updates",
-      "matchUpdateTypes": ["minor", "patch", "pin", "digest"],
-      "automerge": true
-    },
-    {
-      "description": "Require manual merge for major updates",
+      "description": "Wait 3 days before automerging major updates",
       "matchUpdateTypes": ["major"],
-      "automerge": false,
-      "labels": ["dependencies", "breaking"]
+      "minimumReleaseAge": "3 days"
     },
     {
-      "description": "Group all GitHub Actions updates",
+      "description": "Group GitHub Actions into one PR",
       "matchManagers": ["github-actions"],
-      "groupName": "github-actions",
-      "automerge": true
+      "groupName": "GitHub Actions"
     },
     {
-      "description": "Group all devDependency non-major updates",
+      "description": "Group devDependencies non-major updates",
       "matchDepTypes": ["devDependencies"],
       "matchUpdateTypes": ["minor", "patch"],
       "groupName": "dev-dependencies",
       "automerge": true
     },
     {
-      "description": "Group all type definition updates",
-      "matchPackageNames": ["/^@types//"],
+      "description": "Group type definitions",
+      "matchPackageNames": ["/^@types\\//"],
       "groupName": "type-definitions",
       "automerge": true
     }
