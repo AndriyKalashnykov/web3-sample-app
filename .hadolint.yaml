@@ -1,5 +1,6 @@
 # hadolint configuration
 # https://github.com/hadolint/hadolint#configure
 ignored:
+  - DL3016  # Pin versions in npm (pnpm version managed via Makefile/CI, not Dockerfile)
   - DL3018  # Pin versions in apk add (alpine packages change frequently, acceptable risk)
   - DL3059  # Multiple consecutive RUN instructions (clarity over layer optimization in dev)
