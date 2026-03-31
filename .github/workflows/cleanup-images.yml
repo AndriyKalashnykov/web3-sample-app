@@ -5,13 +5,18 @@ on:
     - cron: '0 3 * * 0' # weekly, Sunday 3am UTC
   workflow_dispatch:
 
-permissions:
-  packages: write
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions: {}
 
 jobs:
 
   cleanup:
     runs-on: ubuntu-latest
+    permissions:
+      packages: write
     steps:
       - name: Delete old untagged container images
         uses: actions/delete-package-versions@e5bc658cc4c965c472efe991f8beea3981499c55 # v5

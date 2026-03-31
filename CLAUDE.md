@@ -7,17 +7,20 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 All commands go through the Makefile. Use `make help` to list targets.
 
 ```bash
-make deps         # install all prerequisite tools (nvm, node, pnpm, act, kubectl, kind, yq)
-make install      # pnpm install (skips if node_modules is current)
-make build        # tsc + vite build (runs install first)
-make lint         # prettier --check + hadolint Dockerfile linting
-make format       # prettier --write
-make check        # lint + build in one command
+make deps          # install prerequisite tools (nvm, node, pnpm)
+make deps-act      # install act for local CI
+make deps-hadolint # install hadolint for Dockerfile linting
+make deps-k8s      # install kubectl, kind, yq
+make install       # pnpm install (skips if node_modules is current)
+make build         # tsc + vite build (runs install first)
+make lint          # prettier --check + hadolint linting of both Dockerfiles
+make format        # prettier --write
+make check         # lint + test + build in one command
 make test          # run tests once (vitest)
-make test.watch    # run tests in watch mode
-make test.coverage # run tests with coverage report
+make test-watch    # run tests in watch mode
+make test-coverage # run tests with coverage report
 make run           # dev server at http://localhost:8080
-make ci-install    # pnpm install --frozen-lockfile (CI only)
+make ci-install    # pnpm install --frozen-lockfile (CI only, no deps)
 make ci-run        # run CI workflow locally via act
 ```
 
@@ -67,7 +70,7 @@ Vite 8 with oxc minifier (not terser). Console and debugger statements are strip
 
 ## CI/CD
 
-- **ci.yml**: `ci-install` → `lint` → `test` → `build` on every push/PR. Docker image build+push to GHCR only on tag push (uses `Dockerfile.prod`). Docker job gated with `startsWith(github.ref, 'refs/tags/')`.
+- **ci.yml**: `ci-install` → `lint` → `test` → `build` on push to main, tag push (`v*`), PRs, and manual dispatch. Docker image build+push to GHCR only on tag push (uses `Dockerfile.prod`). Docker job gated with `startsWith(github.ref, 'refs/tags/')`.
 - **cleanup-runs.yml**: Weekly cleanup of old workflow runs (keeps 5, deletes after 7 days).
 - **cleanup-images.yml**: Weekly cleanup of untagged GHCR images (keeps 5 most recent).
 - All GitHub Actions pinned to commit SHAs. Renovate manages dependency updates with automerge for non-major.

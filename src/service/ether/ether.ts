@@ -1,24 +1,24 @@
 import { ethers } from 'ethers'
 
-export var provider
-export var ETHbalance
-export var ETHblock
+export let provider: ethers.JsonRpcProvider
+export let ETHbalance: bigint
+export let ETHblock: number
 
-export var DAIContractName
-export var DAISymbol
-export var DAIBalance
-export var DAIBalanceFormatted
-export var DAIblock
+export let DAIContractName: string
+export let DAISymbol: string
+export let DAIBalance: bigint
+export let DAIBalanceFormatted: string
+export let DAIblock: number
 
 export async function getProvider() {
   provider = new ethers.JsonRpcProvider(import.meta.env.VITE_RPCENDPOINT)
   await provider.ready
 }
 
-export async function getETHBalance(account) {
+export async function getETHBalance(account: string) {
   try {
     ETHblock = 0
-    ETHbalance = 0
+    ETHbalance = 0n
     getProvider()
 
     return Promise.all([
@@ -33,10 +33,10 @@ export async function getETHBalance(account) {
   }
 }
 
-export async function getDAIBalance(address) {
+export async function getDAIBalance(address: string) {
   try {
     DAIblock = 0
-    DAIBalance = 0
+    DAIBalance = 0n
     getProvider()
 
     const daiAddress = 'dai.tokens.ethers.eth'

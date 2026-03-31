@@ -16,10 +16,10 @@ const RPCENDPOINT = import.meta.env.VITE_RPCENDPOINT ?? 'not configured'
 const ERRMSG = 'Could not retrieve info from blockchain using\n'
 
 const AccountForm = () => {
-  const delay = (ms) => new Promise((res) => setTimeout(res, ms))
+  const delay = (ms: number) => new Promise((res) => setTimeout(res, ms))
 
   const [destinationAddress, setDestinationAddress] = useState('')
-  const [balance, setBalance] = useState(0)
+  const [balance, setBalance] = useState<bigint>(0n)
   const [block, setBlock] = useState(0)
   const [asset, setAsset] = useState('ETH')
   const [disable, setDisable] = useState(false)
@@ -44,7 +44,7 @@ const AccountForm = () => {
     if (ethers.isAddress(destinationAddress)) {
       setDisable(true)
     }
-    setBalance(0)
+    setBalance(0n)
     setBlock(0)
     let assetCbValue: string = (
       document.getElementById('selectAsset') as HTMLInputElement
@@ -76,12 +76,12 @@ const AccountForm = () => {
     setDisable(false)
   }
 
-  const handleChange = (event?) => {
+  const handleChange = (event?: React.ChangeEvent<HTMLSelectElement>) => {
     try {
-      setAsset(event.target.value)
+      setAsset(event!.target.value)
       getBalance(event)
     } catch (e) {
-      console.log(e.message)
+      console.log(e instanceof Error ? e.message : e)
       if (typeof e === 'string') {
         e.toUpperCase()
       } else if (e instanceof Error) {

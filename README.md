@@ -1,5 +1,6 @@
 [![CI](https://github.com/AndriyKalashnykov/web3-sample-app/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/AndriyKalashnykov/web3-sample-app/actions/workflows/ci.yml)
 [![Hits](https://hits.sh/github.com/AndriyKalashnykov/web3-sample-app.svg?view=today-total&style=plastic)](https://hits.sh/github.com/AndriyKalashnykov/web3-sample-app/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-brightgreen.svg)](https://opensource.org/licenses/MIT)
 [![Renovate enabled](https://img.shields.io/badge/renovate-enabled-brightgreen.svg)](https://app.renovatebot.com/dashboard#github/AndriyKalashnykov/web3-sample-app)
 
 # Web3 Sample App
@@ -29,7 +30,7 @@ Install all other dependencies automatically:
 make deps
 ```
 
-This installs (if missing): [nvm](https://github.com/nvm-sh/nvm), Node.js LTS, [pnpm](https://pnpm.io/), [act](https://github.com/nektos/act), [kubectl](https://kubernetes.io/docs/tasks/tools/), [KinD](https://kind.sigs.k8s.io/), [yq](https://github.com/mikefarah/yq). Tools install to `~/.local/bin` (no sudo required).
+This installs (if missing): [nvm](https://github.com/nvm-sh/nvm), Node.js, [pnpm](https://pnpm.io/). Tools install to `~/.local/bin` (no sudo required).
 
 Node.js version is managed via `.node-version` (`lts/*`).
 
@@ -41,10 +42,10 @@ Run `make help` to see all available targets.
 
 | Target | Description |
 |--------|-------------|
-| `make build` | Build (tsc + vite) |
+| `make build` | Build |
 | `make run` | Start dev server on port 8080 |
-| `make install` | Install Node.js dependencies |
-| `make clean` | Cleanup node_modules and dist |
+| `make install` | Install NodeJS dependencies |
+| `make clean` | Cleanup |
 | `make upgrade` | Upgrade dependencies |
 
 ### Code Quality
@@ -53,25 +54,25 @@ Run `make help` to see all available targets.
 |--------|-------------|
 | `make lint` | Run prettier check and Dockerfile linting |
 | `make format` | Run prettier format |
-| `make check` | Run lint and build |
+| `make check` | Run lint, test, and build |
 | `make test` | Run tests |
-| `make test.watch` | Run tests in watch mode |
-| `make test.coverage` | Run tests with coverage report |
+| `make test-watch` | Run tests in watch mode |
+| `make test-coverage` | Run tests with coverage report |
 
 ### CI
 
 | Target | Description |
 |--------|-------------|
-| `make ci` | Full CI pipeline: install, lint, test, build |
-| `make ci-install` | Install Node.js dependencies (CI, frozen lockfile) |
-| `make ci-run` | Run GitHub Actions workflow locally via [act](https://github.com/nektos/act) |
+| `make ci` | Run full CI pipeline (install, lint, test, build) |
+| `make ci-install` | Install NodeJS dependencies (CI, frozen lockfile) |
+| `make ci-run` | Run GitHub workflow locally using [act](https://github.com/nektos/act) |
 
 ### Docker
 
 | Target | Description |
 |--------|-------------|
 | `make image-build` | Build a Docker image |
-| `make image-build-prod` | Build a production Docker image |
+| `make image-build-prod` | Build a PROD Docker image |
 | `make image-run` | Run a Docker image |
 | `make image-stop` | Stop a Docker image |
 
@@ -87,8 +88,11 @@ Run `make help` to see all available targets.
 
 | Target | Description |
 |--------|-------------|
-| `make deps` | Install prerequisite tools (nvm, node, pnpm, act, git, kubectl, kind, yq) |
+| `make help` | List available tasks |
+| `make deps` | Install prerequisite tools (nvm, node, pnpm) |
+| `make deps-act` | Install act for local CI |
 | `make deps-hadolint` | Install hadolint for Dockerfile linting |
+| `make deps-k8s` | Install kubectl, kind, and yq |
 | `make release` | Create and push a new tag |
 | `make delete-tag TAG=v0.0.1` | Delete a tag locally and remotely |
 | `make renovate-validate` | Validate Renovate configuration |
@@ -96,36 +100,6 @@ Run `make help` to see all available targets.
 `make install` skips `pnpm install` when `node_modules` is already up-to-date with `package.json` and `pnpm-lock.yaml`.
 
 Tool versions are pinned as constants at the top of the Makefile for reproducibility.
-
-## CI/CD
-
-GitHub Actions runs on every push to `main`, tags `v*`, and pull requests.
-
-| Job | Triggers | Steps |
-|-----|----------|-------|
-| **build** | push, PR, tags | Lint, Test, Build |
-| **docker-image** | tag push only | Multi-arch image build + push to GHCR |
-
-All actions are pinned to commit SHAs for supply chain safety. CI uses `pnpm install --frozen-lockfile` for reproducible builds.
-
-### Cleanup Workflows
-
-| Workflow | Schedule | Purpose |
-|----------|----------|---------|
-| `cleanup-images.yml` | Weekly (Sunday 3 AM UTC) | Delete old untagged GHCR images, keep 5 most recent |
-| `cleanup-runs.yml` | Weekly (Sunday midnight UTC) | Delete workflow runs older than 7 days, keep at least 5 |
-
-### Run CI Locally
-
-```bash
-make ci-run
-```
-
-Uses [act](https://github.com/nektos/act) to run the GitHub Actions workflow locally. The `deps` target installs `act` if not present.
-
-### Dependency Management
-
-[Renovate](https://docs.renovatebot.com/) manages dependency updates with platform automerge enabled. Non-major updates automerge after CI passes. Major updates wait 3 days for stability.
 
 ## Kubernetes Deployment
 
@@ -175,8 +149,8 @@ Vitest with React Testing Library and jsdom. Run tests with:
 
 ```bash
 make test            # run tests once
-make test.watch      # run tests in watch mode
-make test.coverage   # run tests with coverage report
+make test-watch      # run tests in watch mode
+make test-coverage   # run tests with coverage report
 ```
 
 Valid Ethereum address for manual testing:
@@ -184,3 +158,33 @@ Valid Ethereum address for manual testing:
 ```
 0xeB2629a2734e272Bcc07BDA959863f316F4bD4Cf
 ```
+
+## CI/CD
+
+GitHub Actions runs on push to `main`, tags `v*`, pull requests, and manual dispatch (`workflow_dispatch`).
+
+| Job | Triggers | Steps |
+|-----|----------|-------|
+| **ci** | push, PR, tags, manual | Lint, Test, Build |
+| **docker-image** | tag push only | Multi-arch image build + push to GHCR |
+
+All actions are pinned to commit SHAs for supply chain safety. CI uses `pnpm install --frozen-lockfile` for reproducible builds.
+
+### Cleanup Workflows
+
+| Workflow | Schedule | Purpose |
+|----------|----------|---------|
+| `cleanup-images.yml` | Weekly (Sunday 3 AM UTC) | Delete old untagged GHCR images, keep 5 most recent |
+| `cleanup-runs.yml` | Weekly (Sunday midnight UTC) | Delete workflow runs older than 7 days, keep at least 5 |
+
+### Run CI Locally
+
+```bash
+make ci-run
+```
+
+Uses [act](https://github.com/nektos/act) to run the GitHub Actions workflow locally. The `deps-act` target installs `act` if not present.
+
+### Dependency Management
+
+[Renovate](https://docs.renovatebot.com/) manages dependency updates with platform automerge enabled. Non-major updates automerge after CI passes. Major updates wait 3 days for stability.

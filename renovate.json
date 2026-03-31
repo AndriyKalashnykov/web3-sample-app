@@ -17,9 +17,7 @@
   "automergeType": "branch",
   "automergeStrategy": "squash",
   "ignoreTests": false,
-  "rollbackPrs": true,
   "vulnerabilityAlerts": {
-    "enabled": true,
     "labels": [
       "security"
     ],

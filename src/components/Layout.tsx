@@ -25,11 +25,11 @@ import { useTranslation } from 'react-i18next'
 const Version = 'v0.0.1'
 
 const LanguageSwitch = () => {
-  const [anchorEl, setAnchorEl] = useState(null)
+  const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null)
   const open = Boolean(anchorEl)
   const dispatch = useDispatch<Dispatch>()
   const language = useSelector((state: RootState) => state.common.language)
-  const languageList = {
+  const languageList: Record<string, string> = {
     en: 'English',
   }
 
@@ -73,16 +73,18 @@ const Header = () => {
   const drawerAnchor = 'left'
   const [drawerOpen, setDrawerOpen] = useState(false)
   const { t } = useTranslation()
-  const toggleDrawer = (open: boolean) => (event) => {
-    if (
-      event &&
-      event.type === 'keydown' &&
-      (event.key === 'Tab' || event.key === 'Shift')
-    ) {
-      return
+  const toggleDrawer =
+    (open: boolean) => (event: React.KeyboardEvent | React.MouseEvent) => {
+      if (
+        event &&
+        event.type === 'keydown' &&
+        ((event as React.KeyboardEvent).key === 'Tab' ||
+          (event as React.KeyboardEvent).key === 'Shift')
+      ) {
+        return
+      }
+      setDrawerOpen(open)
     }
-    setDrawerOpen(open)
-  }
   const menuList = [
     {
       title: 'Home',
