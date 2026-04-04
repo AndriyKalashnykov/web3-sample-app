@@ -7,7 +7,7 @@ NVM_DIR        := $(HOME)/.nvm
 NVM_VERSION    := 0.40.4
 PNPM_VERSION   := 10.33.0
 ACT_VERSION    := 0.2.87
-HADOLINT_VERSION := 2.12.0
+HADOLINT_VERSION := 2.14.0
 KUBECTL_VERSION := 1.35.3
 KIND_VERSION   := 0.31.0
 YQ_VERSION     := 4.52.5
@@ -41,7 +41,7 @@ deps:
 	@echo "All dependencies are available."
 
 #deps-act: @ Install act for local CI
-deps-act:
+deps-act: deps
 	@command -v act >/dev/null 2>&1 || { \
 		echo "Installing act $(ACT_VERSION)..."; \
 		mkdir -p $(LOCAL_BIN); \
@@ -83,7 +83,7 @@ clean:
 	@rm -rf node_modules/ dist/
 
 #install: @ Install NodeJS dependencies
-install: node_modules
+install: deps node_modules
 
 node_modules: package.json pnpm-lock.yaml
 	@pnpm install
@@ -151,7 +151,8 @@ ci: ci-install lint test build
 
 #ci-run: @ Run GitHub workflow locally using act
 ci-run: deps-act
-	@act -j ci --container-architecture linux/amd64
+	@act push --container-architecture linux/amd64 \
+		--artifact-server-path /tmp/act-artifacts
 
 #release: @ Create and push a new tag
 release:
@@ -195,6 +196,21 @@ kind-redeploy: deps-k8s image-build
 	kubectl apply -f ./k8s/cm.yaml --namespace=web3 && \
 	yq eval '.spec.template.spec.containers[0].image = "$(APP_NAME):$(CURRENTTAG)"' ./k8s/deployment.yaml | kubectl apply --namespace=web3 -f -
 
+#deps-prune: @ Check for unused npm dependencies
+deps-prune: install
+	@echo "=== Dependency Pruning ==="
+	@echo "--- Node: checking for unused packages ---"
+	@npx --yes depcheck --ignores="@types/*,@tailwindcss/*,@rematch/*,postcss,tailwindcss" 2>/dev/null || true
+	@echo "=== Pruning complete ==="
+
+#deps-prune-check: @ Verify no prunable dependencies (CI gate)
+deps-prune-check: install
+	@npx --yes depcheck --ignores="@types/*,@tailwindcss/*,@rematch/*,postcss,tailwindcss" 2>/dev/null; \
+	if [ $$? -ne 0 ]; then \
+		echo "ERROR: Unused dependencies found. Run 'make deps-prune' to identify them."; \
+		exit 1; \
+	fi
+
 #renovate-validate: @ Validate Renovate configuration
 renovate-validate:
 	@npx --yes renovate@$(RENOVATE_VERSION) --platform=local
@@ -202,4 +218,4 @@ renovate-validate:
 .PHONY: help deps deps-act deps-hadolint deps-k8s clean install ci-install build lint format check upgrade \
 	test test-watch test-coverage run \
 	image-build image-build-prod image-run image-stop ci ci-run release delete-tag \
-	kind-deploy kind-undeploy kind-redeploy renovate-validate
+	kind-deploy kind-undeploy kind-redeploy deps-prune deps-prune-check renovate-validate

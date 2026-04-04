@@ -1,10 +1,17 @@
-import { init, RematchDispatch, RematchRootState } from '@rematch/core'
-import { models, RootModel } from './models'
+import { configureStore } from '@reduxjs/toolkit'
+import { useDispatch, useSelector } from 'react-redux'
+import counterReducer from './counterSlice'
+import commonReducer from './commonSlice'
 
-export const store = init({
-  models,
+export const store = configureStore({
+  reducer: {
+    counter: counterReducer,
+    common: commonReducer,
+  },
 })
 
-export type Store = typeof store
-export type Dispatch = RematchDispatch<RootModel>
-export type RootState = RematchRootState<RootModel>
+export type RootState = ReturnType<typeof store.getState>
+export type AppDispatch = typeof store.dispatch
+
+export const useAppDispatch = useDispatch.withTypes<AppDispatch>()
+export const useAppSelector = useSelector.withTypes<RootState>()

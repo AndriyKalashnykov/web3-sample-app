@@ -5,13 +5,15 @@
 
 # Web3 Sample App
 
-Web3 frontend built with React 19, TypeScript, Vite 8, and ethers.js v6 that queries ETH and DAI balances from the Ethereum blockchain. Uses MUI v7, Tailwind CSS v4, and Rematch for state management.
+Web3 frontend built with React 19, TypeScript, Vite 8, and ethers.js v6 that queries ETH and DAI balances from the Ethereum blockchain. Uses MUI v7, Tailwind CSS v4, and Redux Toolkit for state management.
 
 ## Quick Start
 
 ```bash
 make deps       # install all prerequisite tools
 make install    # install Node.js dependencies
+make build      # build the project
+make test       # run tests
 make run        # start dev server on http://localhost:8080
 ```
 
@@ -93,6 +95,8 @@ Run `make help` to see all available targets.
 | `make deps-act` | Install act for local CI |
 | `make deps-hadolint` | Install hadolint for Dockerfile linting |
 | `make deps-k8s` | Install kubectl, kind, and yq |
+| `make deps-prune` | Check for unused npm dependencies |
+| `make deps-prune-check` | Verify no prunable dependencies (CI gate) |
 | `make release` | Create and push a new tag |
 | `make delete-tag TAG=v0.0.1` | Delete a tag locally and remotely |
 | `make renovate-validate` | Validate Renovate configuration |
@@ -100,6 +104,54 @@ Run `make help` to see all available targets.
 `make install` skips `pnpm install` when `node_modules` is already up-to-date with `package.json` and `pnpm-lock.yaml`.
 
 Tool versions are pinned as constants at the top of the Makefile for reproducibility.
+
+## Testing
+
+Vitest with React Testing Library and jsdom. Run tests with:
+
+```bash
+make test            # run tests once
+make test-watch      # run tests in watch mode
+make test-coverage   # run tests with coverage report
+```
+
+Valid Ethereum address for manual testing:
+
+```
+0xeB2629a2734e272Bcc07BDA959863f316F4bD4Cf
+```
+
+## CI/CD
+
+GitHub Actions runs on push to `main`, tags `v*`, pull requests, and manual dispatch (`workflow_dispatch`).
+
+| Job | Triggers | Steps |
+|-----|----------|-------|
+| **lint** | push, PR, tags, manual | Prettier check + Dockerfile linting |
+| **test** | after lint passes | Run tests |
+| **build** | after lint passes | TypeScript + Vite build |
+| **docker-image** | tag push only | Multi-arch image build + push to GHCR |
+
+All actions are pinned to commit SHAs for supply chain safety. CI uses `pnpm install --frozen-lockfile` for reproducible builds.
+
+### Cleanup Workflows
+
+| Workflow | Schedule | Purpose |
+|----------|----------|---------|
+| `cleanup-images.yml` | Weekly (Sunday 3 AM UTC) | Delete old untagged GHCR images, keep 5 most recent |
+| `cleanup-runs.yml` | Weekly (Sunday midnight UTC) | Delete workflow runs older than 7 days, keep at least 5 |
+
+### Run CI Locally
+
+```bash
+make ci-run
+```
+
+Uses [act](https://github.com/nektos/act) to run the GitHub Actions workflow locally. The `deps-act` target installs `act` if not present.
+
+### Dependency Management
+
+[Renovate](https://docs.renovatebot.com/) manages dependency updates with platform automerge enabled. All updates automerge after CI passes. Major updates wait 3 days for stability.
 
 ## Kubernetes Deployment
 
@@ -142,49 +194,3 @@ make kind-redeploy   # update running deployment
    ```bash
    make delete-tag TAG=v0.0.1
    ```
-
-## Testing
-
-Vitest with React Testing Library and jsdom. Run tests with:
-
-```bash
-make test            # run tests once
-make test-watch      # run tests in watch mode
-make test-coverage   # run tests with coverage report
-```
-
-Valid Ethereum address for manual testing:
-
-```
-0xeB2629a2734e272Bcc07BDA959863f316F4bD4Cf
-```
-
-## CI/CD
-
-GitHub Actions runs on push to `main`, tags `v*`, pull requests, and manual dispatch (`workflow_dispatch`).
-
-| Job | Triggers | Steps |
-|-----|----------|-------|
-| **ci** | push, PR, tags, manual | Lint, Test, Build |
-| **docker-image** | tag push only | Multi-arch image build + push to GHCR |
-
-All actions are pinned to commit SHAs for supply chain safety. CI uses `pnpm install --frozen-lockfile` for reproducible builds.
-
-### Cleanup Workflows
-
-| Workflow | Schedule | Purpose |
-|----------|----------|---------|
-| `cleanup-images.yml` | Weekly (Sunday 3 AM UTC) | Delete old untagged GHCR images, keep 5 most recent |
-| `cleanup-runs.yml` | Weekly (Sunday midnight UTC) | Delete workflow runs older than 7 days, keep at least 5 |
-
-### Run CI Locally
-
-```bash
-make ci-run
-```
-
-Uses [act](https://github.com/nektos/act) to run the GitHub Actions workflow locally. The `deps-act` target installs `act` if not present.
-
-### Dependency Management
-
-[Renovate](https://docs.renovatebot.com/) manages dependency updates with platform automerge enabled. Non-major updates automerge after CI passes. Major updates wait 3 days for stability.

@@ -22,13 +22,16 @@ make test-coverage # run tests with coverage report
 make run           # dev server at http://localhost:8080
 make ci-install    # pnpm install --frozen-lockfile (CI only, no deps)
 make ci-run        # run CI workflow locally via act
+make upgrade       # upgrade dependencies
+make deps-prune    # check for unused npm dependencies
+make deps-prune-check # verify no prunable dependencies (CI gate)
 ```
 
 ## Testing
 
 Vitest with React Testing Library and jsdom. Config in `vitest.config.ts`, global setup in `src/test/setup.ts`.
 
-- **Unit tests**: `src/store/models/__tests__/` (Rematch models), `src/service/ether/__tests__/` (ether service with mocked ethers.js)
+- **Unit tests**: `src/store/models/__tests__/` (Redux Toolkit slices), `src/service/ether/__tests__/` (ether service with mocked ethers.js)
 - **Integration tests**: `src/components/__tests__/` (AccountForm, Counter, App — rendered with providers)
 - **Test utilities**: `src/test/test-utils.tsx` exports `renderWithProviders` (wraps components in Redux Provider, MUI ThemeProvider, MemoryRouter)
 
@@ -53,7 +56,7 @@ This is a React SPA that queries Ethereum blockchain balances (ETH and DAI) via 
 - **Pages** (`src/pages/`): Route-level components (`index/` = home, `about/`)
 - **Components** (`src/components/`): `AccountForm` (blockchain query UI), `Counter` (Redux demo), `Layout` (Header/Footer with MUI drawer nav), `Logo`
 - **Ethereum service** (`src/service/ether/ether.ts`): Uses `ethers.JsonRpcProvider` to query ETH balances and DAI token contract. RPC endpoint comes from `VITE_RPCENDPOINT` env var.
-- **State** (`src/store/`): Rematch (Redux wrapper) with models for `counter` and `common` (language). Not Redux Toolkit — uses `@rematch/core` `createModel` pattern.
+- **State** (`src/store/`): Redux Toolkit with slices for `counter` (`counterSlice.ts`) and `common` (`commonSlice.ts`). Uses `configureStore`, `createSlice`, and typed hooks (`useAppDispatch`, `useAppSelector`).
 - **i18n** (`src/locale.ts`): i18next with static English translations from `src/locales/en.json`
 
 ### Path Alias
@@ -70,10 +73,10 @@ Vite 8 with oxc minifier (not terser). Console and debugger statements are strip
 
 ## CI/CD
 
-- **ci.yml**: `ci-install` → `lint` → `test` → `build` on push to main, tag push (`v*`), PRs, and manual dispatch. Docker image build+push to GHCR only on tag push (uses `Dockerfile.prod`). Docker job gated with `startsWith(github.ref, 'refs/tags/')`.
+- **ci.yml**: Separate jobs: `lint` → `test` + `build` (parallel) on push to main, tag push (`v*`), PRs, manual dispatch, and `workflow_call`. Docker image build+push to GHCR only on tag push (uses `Dockerfile.prod`). Docker job gated with `startsWith(github.ref, 'refs/tags/')`.
 - **cleanup-runs.yml**: Weekly cleanup of old workflow runs (keeps 5, deletes after 7 days).
 - **cleanup-images.yml**: Weekly cleanup of untagged GHCR images (keeps 5 most recent).
-- All GitHub Actions pinned to commit SHAs. Renovate manages dependency updates with automerge for non-major.
+- All GitHub Actions pinned to commit SHAs. Renovate manages dependency updates with automerge enabled (major updates delayed 3 days).
 
 ## Docker
 
@@ -92,7 +95,15 @@ Vite 8 with oxc minifier (not terser). Console and debugger statements are strip
 - Dockerfile linting: **hadolint** via `make lint` (installed by `deps-hadolint` target)
 - Commit messages: conventional commits (`feat:`, `fix:`, `chore:`, `ci:`, `refactor:`, `docs:`, `perf:`)
 - Release: `make release` validates semver format (`vN.N.N`) before tagging
-- Vulnerable transitive deps fixed via `pnpm.overrides` in `package.json`
+- State management: **Redux Toolkit** with `createSlice` pattern (migrated from Rematch)
+
+## Upgrade Backlog
+
+Last reviewed: 2026-04-03. Review on next pass — resolve actionable items, remove stale ones.
+
+- [x] ~~**Remove stale `.eslintrc.js`**~~ — deleted (2026-04-03)
+- [ ] **Monitor ethers.js maintainer activity** — 635 open issues, single maintainer (ricmoo), last push 2026-02-13. If responsiveness declines further, evaluate `viem` as alternative.
+- [ ] **Update nginx base image** — `1.29.5-alpine` → `1.29.7-alpine` when Docker image is published (Renovate handles via digest)
 
 ## Skills
 

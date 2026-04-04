@@ -1,34 +1,18 @@
-import React from 'react'
-import { connect } from 'react-redux'
-import { Dispatch, RootState } from '@/store/index'
+import { useAppDispatch, useAppSelector } from '@/store'
+import { increment } from '@/store/counterSlice'
 
-const mapState = (state: RootState) => ({
-  counter: state.counter,
-})
+export default function Counter() {
+  const counter = useAppSelector((state) => state.counter)
+  const dispatch = useAppDispatch()
 
-const mapDispatch = (dispatch: Dispatch) => ({
-  inc: () => dispatch.counter.inc(1),
-  dec: () => dispatch.counter.inc(-1),
-})
-
-type StateProps = ReturnType<typeof mapState>
-type DispatchProps = ReturnType<typeof mapDispatch>
-type Props = StateProps & DispatchProps
-
-class Counter extends React.Component<Props> {
-  render() {
-    return (
-      <>
-        <div
-          onClick={this.props.inc}
-          className="py-2 text-center text-white rounded-sm bg-green-500 active:bg-green-300"
-        >
-          Click me - {this.props.counter}
-        </div>
-        {/* <Button onClick={this.props.dec}>dec-{this.props.counter}</Button> */}
-      </>
-    )
-  }
+  return (
+    <>
+      <div
+        onClick={() => dispatch(increment(1))}
+        className="py-2 text-center text-white rounded-sm bg-green-500 active:bg-green-300"
+      >
+        Click me - {counter}
+      </div>
+    </>
+  )
 }
-
-export default connect(mapState, mapDispatch)(Counter)

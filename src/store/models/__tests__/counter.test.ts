@@ -1,40 +1,37 @@
 import { describe, it, expect } from 'vitest'
-import { init } from '@rematch/core'
-import { models } from '@/store/models'
+import { configureStore } from '@reduxjs/toolkit'
+import counterReducer, { increment } from '@/store/counterSlice'
+import commonReducer from '@/store/commonSlice'
 
 function createStore() {
-  return init({ models })
+  return configureStore({
+    reducer: { counter: counterReducer, common: commonReducer },
+  })
 }
 
-describe('counter model', () => {
+describe('counter slice', () => {
   it('has initial state of 0', () => {
     const store = createStore()
     expect(store.getState().counter).toBe(0)
   })
 
-  it('increments via SET_NUMBER reducer', () => {
+  it('increments via increment action', () => {
     const store = createStore()
-    store.dispatch.counter.SET_NUMBER(1)
+    store.dispatch(increment(1))
     expect(store.getState().counter).toBe(1)
   })
 
-  it('decrements via SET_NUMBER reducer', () => {
+  it('decrements via increment action with negative payload', () => {
     const store = createStore()
-    store.dispatch.counter.SET_NUMBER(1)
-    store.dispatch.counter.SET_NUMBER(-1)
+    store.dispatch(increment(1))
+    store.dispatch(increment(-1))
     expect(store.getState().counter).toBe(0)
   })
 
-  it('increments via inc effect', async () => {
+  it('handles multiple increments', () => {
     const store = createStore()
-    await store.dispatch.counter.inc(1)
-    expect(store.getState().counter).toBe(1)
-  })
-
-  it('decrements via inc effect with negative payload', async () => {
-    const store = createStore()
-    await store.dispatch.counter.inc(5)
-    await store.dispatch.counter.inc(-2)
+    store.dispatch(increment(5))
+    store.dispatch(increment(-2))
     expect(store.getState().counter).toBe(3)
   })
 })

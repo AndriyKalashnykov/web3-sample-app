@@ -1,5 +1,6 @@
 import i18n from '@/locale'
-import { Dispatch, RootState } from '@/store'
+import { useAppDispatch, useAppSelector } from '@/store'
+import { setLanguage } from '@/store/commonSlice'
 import InfoIcon from '@mui/icons-material/Info'
 import MenuIcon from '@mui/icons-material/Menu'
 import HomeIcon from '@mui/icons-material/Home'
@@ -16,7 +17,6 @@ import {
   ListItemText,
 } from '@mui/material'
 import { useState } from 'react'
-import { useDispatch, useSelector } from 'react-redux'
 import ArrowDropDownIcon from '@mui/icons-material/ArrowDropDown'
 import Logo from './Logo'
 import React from 'react'
@@ -27,14 +27,14 @@ const Version = 'v0.0.1'
 const LanguageSwitch = () => {
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null)
   const open = Boolean(anchorEl)
-  const dispatch = useDispatch<Dispatch>()
-  const language = useSelector((state: RootState) => state.common.language)
+  const dispatch = useAppDispatch()
+  const language = useAppSelector((state) => state.common.language)
   const languageList: Record<string, string> = {
     en: 'English',
   }
 
   const onLocaleChanged = (locale: string) => {
-    dispatch.common.setLanguage(locale)
+    dispatch(setLanguage(locale))
     i18n?.changeLanguage(locale)
     setAnchorEl(null)
   }

@@ -5,7 +5,6 @@
     ":semanticCommitType(chore)"
   ],
   "commitMessagePrefix": "chore(all): ",
-  "commitMessageAction": "update",
   "commitBody": "Signed-off-by: Renovate Bot <bot@renovateapp.com>",
   "labels": [
     "dependencies"
@@ -31,6 +30,94 @@
   "npm": {
     "minimumReleaseAge": "3 days"
   },
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Track nvm version in Makefile",
+      "managerFilePatterns": ["/^Makefile$/"],
+      "matchStrings": [
+        "NVM_VERSION\\s*:=\\s*(?<currentValue>\\S+)"
+      ],
+      "depNameTemplate": "nvm-sh/nvm",
+      "datasourceTemplate": "github-tags",
+      "extractVersionTemplate": "^v(?<version>.*)$"
+    },
+    {
+      "customType": "regex",
+      "description": "Track pnpm version in Makefile",
+      "managerFilePatterns": ["/^Makefile$/"],
+      "matchStrings": [
+        "PNPM_VERSION\\s*:=\\s*(?<currentValue>\\S+)"
+      ],
+      "depNameTemplate": "pnpm",
+      "datasourceTemplate": "npm"
+    },
+    {
+      "customType": "regex",
+      "description": "Track act version in Makefile",
+      "managerFilePatterns": ["/^Makefile$/"],
+      "matchStrings": [
+        "ACT_VERSION\\s*:=\\s*(?<currentValue>\\S+)"
+      ],
+      "depNameTemplate": "nektos/act",
+      "datasourceTemplate": "github-releases",
+      "extractVersionTemplate": "^v(?<version>.*)$"
+    },
+    {
+      "customType": "regex",
+      "description": "Track hadolint version in Makefile",
+      "managerFilePatterns": ["/^Makefile$/"],
+      "matchStrings": [
+        "HADOLINT_VERSION\\s*:=\\s*(?<currentValue>\\S+)"
+      ],
+      "depNameTemplate": "hadolint/hadolint",
+      "datasourceTemplate": "github-releases",
+      "extractVersionTemplate": "^v(?<version>.*)$"
+    },
+    {
+      "customType": "regex",
+      "description": "Track kubectl version in Makefile",
+      "managerFilePatterns": ["/^Makefile$/"],
+      "matchStrings": [
+        "KUBECTL_VERSION\\s*:=\\s*(?<currentValue>\\S+)"
+      ],
+      "depNameTemplate": "kubernetes/kubernetes",
+      "datasourceTemplate": "github-releases",
+      "extractVersionTemplate": "^v(?<version>.*)$"
+    },
+    {
+      "customType": "regex",
+      "description": "Track kind version in Makefile",
+      "managerFilePatterns": ["/^Makefile$/"],
+      "matchStrings": [
+        "KIND_VERSION\\s*:=\\s*(?<currentValue>\\S+)"
+      ],
+      "depNameTemplate": "kubernetes-sigs/kind",
+      "datasourceTemplate": "github-releases",
+      "extractVersionTemplate": "^v(?<version>.*)$"
+    },
+    {
+      "customType": "regex",
+      "description": "Track yq version in Makefile",
+      "managerFilePatterns": ["/^Makefile$/"],
+      "matchStrings": [
+        "YQ_VERSION\\s*:=\\s*(?<currentValue>\\S+)"
+      ],
+      "depNameTemplate": "mikefarah/yq",
+      "datasourceTemplate": "github-releases",
+      "extractVersionTemplate": "^v(?<version>.*)$"
+    },
+    {
+      "customType": "regex",
+      "description": "Track renovate version in Makefile",
+      "managerFilePatterns": ["/^Makefile$/"],
+      "matchStrings": [
+        "RENOVATE_VERSION\\s*:=\\s*(?<currentValue>\\S+)"
+      ],
+      "depNameTemplate": "renovate",
+      "datasourceTemplate": "npm"
+    }
+  ],
   "packageRules": [
     {
       "description": "Wait 3 days before automerging major updates",
@@ -72,6 +159,13 @@
         "docker"
       ],
       "groupName": "Docker dependencies"
+    },
+    {
+      "description": "Group Makefile tool versions",
+      "matchManagers": [
+        "custom.regex"
+      ],
+      "groupName": "Makefile tools"
     }
   ]
 }

@@ -2,8 +2,9 @@ import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { Provider } from 'react-redux'
 import { ThemeProvider } from '@mui/material/styles'
-import { init } from '@rematch/core'
-import { models } from '@/store/models'
+import { configureStore } from '@reduxjs/toolkit'
+import counterReducer from '@/store/counterSlice'
+import commonReducer from '@/store/commonSlice'
 import { theme } from '@/theme'
 import App from '@/App'
 
@@ -29,7 +30,9 @@ vi.mock('ethers', () => ({
 }))
 
 function renderApp() {
-  const store = init({ models })
+  const store = configureStore({
+    reducer: { counter: counterReducer, common: commonReducer },
+  })
   return render(
     <Provider store={store}>
       <ThemeProvider theme={theme}>

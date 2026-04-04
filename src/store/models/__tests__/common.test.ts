@@ -1,36 +1,33 @@
 import { describe, it, expect } from 'vitest'
-import { init } from '@rematch/core'
-import { models } from '@/store/models'
+import { configureStore } from '@reduxjs/toolkit'
+import counterReducer from '@/store/counterSlice'
+import commonReducer, { setLanguage } from '@/store/commonSlice'
 
 function createStore() {
-  return init({ models })
+  return configureStore({
+    reducer: { counter: counterReducer, common: commonReducer },
+  })
 }
 
-describe('common model', () => {
+describe('common slice', () => {
   it('has initial language of en', () => {
     const store = createStore()
     expect(store.getState().common.language).toBe('en')
   })
 
-  it('updates language via SET_LANGUAGE reducer', () => {
+  it('updates language via setLanguage action', () => {
     const store = createStore()
-    store.dispatch.common.SET_LANGUAGE('fr')
+    store.dispatch(setLanguage('fr'))
     expect(store.getState().common.language).toBe('fr')
   })
 
-  it('returns a new state object (immutable)', () => {
+  it('returns a new state object (immutable from outside)', () => {
     const store = createStore()
     const before = store.getState().common
-    store.dispatch.common.SET_LANGUAGE('de')
+    store.dispatch(setLanguage('de'))
     const after = store.getState().common
     expect(before).not.toBe(after)
     expect(before.language).toBe('en')
     expect(after.language).toBe('de')
-  })
-
-  it('updates language via setLanguage effect', async () => {
-    const store = createStore()
-    await store.dispatch.common.setLanguage('fr')
-    expect(store.getState().common.language).toBe('fr')
   })
 })

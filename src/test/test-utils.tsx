@@ -2,13 +2,19 @@ import { render, RenderOptions } from '@testing-library/react'
 import { Provider } from 'react-redux'
 import { ThemeProvider } from '@mui/material/styles'
 import { MemoryRouter } from 'react-router-dom'
-import { init } from '@rematch/core'
-import { models } from '@/store/models'
+import { configureStore } from '@reduxjs/toolkit'
+import counterReducer from '@/store/counterSlice'
+import commonReducer from '@/store/commonSlice'
 import { theme } from '@/theme'
 import { ReactElement } from 'react'
 
 function createTestStore() {
-  return init({ models })
+  return configureStore({
+    reducer: {
+      counter: counterReducer,
+      common: commonReducer,
+    },
+  })
 }
 
 interface ExtendedRenderOptions extends Omit<RenderOptions, 'wrapper'> {

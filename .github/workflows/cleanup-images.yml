@@ -15,13 +15,28 @@ jobs:
 
   cleanup:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       packages: write
     steps:
       - name: Delete old untagged container images
-        uses: actions/delete-package-versions@e5bc658cc4c965c472efe991f8beea3981499c55 # v5
-        with:
-          package-name: web3-sample-app
-          package-type: container
-          min-versions-to-keep: 5
-          delete-only-untagged-versions: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          PACKAGE="web3-sample-app"
+          OWNER="${{ github.repository_owner }}"
+          KEEP=5
+
+          echo "Fetching untagged versions of $PACKAGE..."
+          gh api \
+            --paginate \
+            "/users/${OWNER}/packages/container/${PACKAGE}/versions" \
+            --jq '.[] | select(.metadata.container.tags | length == 0) | .id' \
+          | tail -n +$((KEEP + 1)) \
+          | while read -r version_id; do
+              echo "Deleting version $version_id"
+              gh api --method DELETE \
+                "/users/${OWNER}/packages/container/${PACKAGE}/versions/${version_id}" \
+                || true
+            done
+          echo "Cleanup complete."
