@@ -57,7 +57,7 @@ This is a React SPA that queries Ethereum blockchain balances (ETH and DAI) via 
 - **Components** (`src/components/`): `AccountForm` (blockchain query UI), `Counter` (Redux demo), `Layout` (Header/Footer with MUI drawer nav), `Logo`
 - **Ethereum service** (`src/service/ether/ether.ts`): Uses `ethers.JsonRpcProvider` to query ETH balances and DAI token contract. RPC endpoint comes from `VITE_RPCENDPOINT` env var.
 - **State** (`src/store/`): Redux Toolkit with slices for `counter` (`counterSlice.ts`) and `common` (`commonSlice.ts`). Uses `configureStore`, `createSlice`, and typed hooks (`useAppDispatch`, `useAppSelector`).
-- **i18n** (`src/locale.ts`): i18next with static English translations from `src/locales/en.json`
+- **i18n** (`src/locale.ts`): i18next with `react-i18next`, static English translations from `src/locales/en.json`
 
 ### Path Alias
 
@@ -99,9 +99,11 @@ Vite 8 with oxc minifier (not terser). Console and debugger statements are strip
 
 ## Upgrade Backlog
 
-Last reviewed: 2026-04-03. Review on next pass — resolve actionable items, remove stale ones.
+Last reviewed: 2026-04-04. Review on next pass — resolve actionable items, remove stale ones.
 
 - [x] ~~**Remove stale `.eslintrc.js`**~~ — deleted (2026-04-03)
+- [x] ~~**Remove dead `src/service/_api/` and `src/utils/util.ts`**~~ — deleted (2026-04-04), unused since Rematch migration
+- [x] ~~**Remove unused deps `axios`, `i18next-http-backend`, `pretty-quick`**~~ — removed (2026-04-04)
 - [ ] **Monitor ethers.js maintainer activity** — 635 open issues, single maintainer (ricmoo), last push 2026-02-13. If responsiveness declines further, evaluate `viem` as alternative.
 - [ ] **Update nginx base image** — `1.29.5-alpine` → `1.29.7-alpine` when Docker image is published (Renovate handles via digest)
 

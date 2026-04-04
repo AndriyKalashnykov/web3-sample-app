@@ -200,12 +200,12 @@ kind-redeploy: deps-k8s image-build
 deps-prune: install
 	@echo "=== Dependency Pruning ==="
 	@echo "--- Node: checking for unused packages ---"
-	@npx --yes depcheck --ignores="@types/*,@tailwindcss/*,@rematch/*,postcss,tailwindcss" 2>/dev/null || true
+	@npx --yes depcheck --ignores="@types/*,@tailwindcss/*,postcss,tailwindcss" 2>/dev/null || true
 	@echo "=== Pruning complete ==="
 
 #deps-prune-check: @ Verify no prunable dependencies (CI gate)
 deps-prune-check: install
-	@npx --yes depcheck --ignores="@types/*,@tailwindcss/*,@rematch/*,postcss,tailwindcss" 2>/dev/null; \
+	@npx --yes depcheck --ignores="@types/*,@tailwindcss/*,postcss,tailwindcss" 2>/dev/null; \
 	if [ $$? -ne 0 ]; then \
 		echo "ERROR: Unused dependencies found. Run 'make deps-prune' to identify them."; \
 		exit 1; \

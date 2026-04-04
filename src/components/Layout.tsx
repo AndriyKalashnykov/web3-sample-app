@@ -22,7 +22,7 @@ import Logo from './Logo'
 import React from 'react'
 import { useTranslation } from 'react-i18next'
 
-const Version = 'v0.0.1'
+const Version = 'v0.0.14'
 
 const LanguageSwitch = () => {
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null)
@@ -146,7 +146,7 @@ const Header = () => {
 const Footer = () => {
   return (
     <div className="w-full flex items-center justify-center px-4 relative">
-      <span className="text-gray-500 text-sm">{Version}, 2022</span>
+      <span className="text-gray-500 text-sm">{Version}</span>
       <div className="absolute right-4">
         <LanguageSwitch />
       </div>

@@ -50,7 +50,7 @@ describe('App component', () => {
 
   it('renders the footer with version', () => {
     renderApp()
-    expect(screen.getByText(/v0\.0\.1/)).toBeInTheDocument()
+    expect(screen.getByText(/v0\.0\.14/)).toBeInTheDocument()
   })
 
   it('renders without crashing', () => {
