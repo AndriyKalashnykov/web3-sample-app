@@ -23,8 +23,8 @@ make run        # start dev server on http://localhost:8080
 |------|---------|---------|
 | [GNU Make](https://www.gnu.org/software/make/) | 3.81+ | Build orchestration |
 | [Git](https://git-scm.com/) | latest | Version control |
-| [Docker](https://www.docker.com/) | latest | Container builds and local K8s |
-| [curl](https://curl.se/) | latest | Tool installation |
+| [Docker](https://www.docker.com/) | latest | Container builds and local K8s (system-provided) |
+| [curl](https://curl.se/) | latest | Tool installation (system-provided) |
 
 Install all other dependencies automatically:
 
@@ -55,6 +55,7 @@ Run `make help` to see all available targets.
 | Target | Description |
 |--------|-------------|
 | `make lint` | Run prettier check and Dockerfile linting |
+| `make vulncheck` | Check for vulnerable dependencies |
 | `make format` | Run prettier format |
 | `make check` | Run lint, test, and build |
 | `make test` | Run tests |
@@ -65,7 +66,7 @@ Run `make help` to see all available targets.
 
 | Target | Description |
 |--------|-------------|
-| `make ci` | Run full CI pipeline (install, lint, test, build) |
+| `make ci` | Run full CI pipeline (install, lint, vulncheck, test, build, deps-prune-check) |
 | `make ci-install` | Install NodeJS dependencies (CI, frozen lockfile) |
 | `make ci-run` | Run GitHub workflow locally using [act](https://github.com/nektos/act) |
 

@@ -25,6 +25,8 @@ make ci-run        # run CI workflow locally via act
 make upgrade       # upgrade dependencies
 make deps-prune    # check for unused npm dependencies
 make deps-prune-check # verify no prunable dependencies (CI gate)
+make vulncheck     # check for vulnerable dependencies
+make renovate-validate # validate Renovate configuration
 ```
 
 ## Testing
@@ -73,7 +75,7 @@ Vite 8 with oxc minifier (not terser). Console and debugger statements are strip
 
 ## CI/CD
 
-- **ci.yml**: Separate jobs: `lint` → `test` + `build` (parallel) on push to main, tag push (`v*`), PRs, manual dispatch, and `workflow_call`. Docker image build+push to GHCR only on tag push (uses `Dockerfile.prod`). Docker job gated with `startsWith(github.ref, 'refs/tags/')`.
+- **ci.yml**: Separate jobs: `lint` → `test` + `build` (parallel) on push to main, tag push (`v*`), PRs, manual dispatch, and `workflow_call`. Docker image build+push to GHCR only on tag push (uses `Dockerfile.prod`). Docker job gated with `needs: [test, build]` and `startsWith(github.ref, 'refs/tags/')`.
 - **cleanup-runs.yml**: Weekly cleanup of old workflow runs (keeps 5, deletes after 7 days).
 - **cleanup-images.yml**: Weekly cleanup of untagged GHCR images (keeps 5 most recent).
 - All GitHub Actions pinned to commit SHAs. Renovate manages dependency updates with automerge enabled (major updates delayed 3 days).
@@ -99,13 +101,16 @@ Vite 8 with oxc minifier (not terser). Console and debugger statements are strip
 
 ## Upgrade Backlog
 
-Last reviewed: 2026-04-04. Review on next pass — resolve actionable items, remove stale ones.
+Last reviewed: 2026-04-06. Review on next pass — resolve actionable items, remove stale ones.
 
 - [x] ~~**Remove stale `.eslintrc.js`**~~ — deleted (2026-04-03)
 - [x] ~~**Remove dead `src/service/_api/` and `src/utils/util.ts`**~~ — deleted (2026-04-04), unused since Rematch migration
 - [x] ~~**Remove unused deps `axios`, `i18next-http-backend`, `pretty-quick`**~~ — removed (2026-04-04)
-- [ ] **Monitor ethers.js maintainer activity** — 635 open issues, single maintainer (ricmoo), last push 2026-02-13. If responsiveness declines further, evaluate `viem` as alternative.
+- [ ] **Evaluate ethers.js → viem migration** — Bus factor = 1 (ricmoo), no release since 2025-12-03, no commits since 2026-02-13, 635 open issues. viem has 464 contributors, multiple releases/month, near npm download parity (3.0M vs 3.18M/week). Migration effort: major (different API surface).
 - [ ] **Update nginx base image** — `1.29.5-alpine` → `1.29.7-alpine` when Docker image is published (Renovate handles via digest)
+- [ ] **K8s deployment: enable resource requests/limits** — Currently commented out in `k8s/deployment.yaml`. Required for production workloads.
+- [ ] **K8s deployment: add securityContext** — Missing `runAsNonRoot`, `readOnlyRootFilesystem` in `k8s/deployment.yaml`.
+- [ ] **Dockerfile: migrate from `npm install -g pnpm` to corepack** — Both Dockerfiles use `npm --global install pnpm`; modern Node.js ships corepack which manages pnpm natively (`corepack enable pnpm`).
 
 ## Skills
 

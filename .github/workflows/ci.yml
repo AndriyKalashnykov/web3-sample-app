@@ -37,6 +37,7 @@ jobs:
         with:
           node-version-file: '.node-version'
           cache: 'pnpm'
+          cache-dependency-path: '**/pnpm-lock.yaml'
 
       - name: Install dependencies
         run: make ci-install
@@ -62,6 +63,7 @@ jobs:
         with:
           node-version-file: '.node-version'
           cache: 'pnpm'
+          cache-dependency-path: '**/pnpm-lock.yaml'
 
       - name: Install dependencies
         run: make ci-install
@@ -87,6 +89,7 @@ jobs:
         with:
           node-version-file: '.node-version'
           cache: 'pnpm'
+          cache-dependency-path: '**/pnpm-lock.yaml'
 
       - name: Install dependencies
         run: make ci-install

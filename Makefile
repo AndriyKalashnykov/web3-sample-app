@@ -103,6 +103,10 @@ lint: install deps-hadolint
 	@PATH="$(LOCAL_BIN):$$PATH" hadolint Dockerfile
 	@PATH="$(LOCAL_BIN):$$PATH" hadolint Dockerfile.prod
 
+#vulncheck: @ Check for vulnerable dependencies
+vulncheck: install
+	@pnpm audit --audit-level=moderate
+
 #format: @ Run prettier format
 format: install
 	@pnpm prettier
@@ -146,8 +150,8 @@ image-run: image-stop
 image-stop:
 	@docker stop web3 || true
 
-#ci: @ Run full CI pipeline (install, lint, test, build)
-ci: ci-install lint test build
+#ci: @ Run full CI pipeline (install, lint, vulncheck, test, build, deps-prune-check)
+ci: ci-install lint vulncheck test build deps-prune-check
 
 #ci-run: @ Run GitHub workflow locally using act
 ci-run: deps-act
@@ -200,12 +204,12 @@ kind-redeploy: deps-k8s image-build
 deps-prune: install
 	@echo "=== Dependency Pruning ==="
 	@echo "--- Node: checking for unused packages ---"
-	@npx --yes depcheck --ignores="@types/*,@tailwindcss/*,postcss,tailwindcss" 2>/dev/null || true
+	@npx --yes depcheck --ignores="@types/*,@tailwindcss/*,postcss,tailwindcss,@vitest/coverage-v8" 2>/dev/null || true
 	@echo "=== Pruning complete ==="
 
 #deps-prune-check: @ Verify no prunable dependencies (CI gate)
 deps-prune-check: install
-	@npx --yes depcheck --ignores="@types/*,@tailwindcss/*,postcss,tailwindcss" 2>/dev/null; \
+	@npx --yes depcheck --ignores="@types/*,@tailwindcss/*,postcss,tailwindcss,@vitest/coverage-v8" 2>/dev/null; \
 	if [ $$? -ne 0 ]; then \
 		echo "ERROR: Unused dependencies found. Run 'make deps-prune' to identify them."; \
 		exit 1; \
@@ -215,7 +219,7 @@ deps-prune-check: install
 renovate-validate:
 	@npx --yes renovate@$(RENOVATE_VERSION) --platform=local
 
-.PHONY: help deps deps-act deps-hadolint deps-k8s clean install ci-install build lint format check upgrade \
+.PHONY: help deps deps-act deps-hadolint deps-k8s clean install ci-install build lint vulncheck format check upgrade \
 	test test-watch test-coverage run \
 	image-build image-build-prod image-run image-stop ci ci-run release delete-tag \
 	kind-deploy kind-undeploy kind-redeploy deps-prune deps-prune-check renovate-validate
