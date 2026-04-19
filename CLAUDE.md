@@ -61,7 +61,7 @@ Notes:
 
 ## Architecture
 
-This is a React SPA that queries Ethereum blockchain balances (ETH and DAI) via ethers.js v6. There is no backend — all blockchain calls happen in the browser against an external JSON-RPC endpoint configured via `VITE_RPCENDPOINT`.
+This is a React SPA that queries Ethereum blockchain balances (ETH and DAI) via viem 2. There is no backend — all blockchain calls happen in the browser against an external JSON-RPC endpoint configured via `VITE_RPCENDPOINT`.
 
 ### Entry Flow
 
@@ -73,7 +73,7 @@ This is a React SPA that queries Ethereum blockchain balances (ETH and DAI) via 
 
 - **Pages** (`src/pages/`): Route-level components (`index/` = home, `about/`)
 - **Components** (`src/components/`): `AccountForm` (blockchain query UI), `Counter` (Redux demo), `Layout` (Header/Footer with MUI drawer nav), `Logo`
-- **Ethereum service** (`src/service/ether/ether.ts`): Uses `ethers.JsonRpcProvider` to query ETH balances and DAI token contract. RPC endpoint comes from `VITE_RPCENDPOINT` env var. DAI contract resolved via ENS name `dai.tokens.ethers.eth`.
+- **Ethereum service** (`src/service/ether/ether.ts`): Uses viem's `createPublicClient` (mainnet, http transport) to query ETH balances and DAI token contract reads. Exposes `getETHBalance(addr)` and `getDAIBalance(addr)` returning typed result objects (`{block, balance}` / `{block, name, symbol, balance, balanceFormatted}`). RPC endpoint comes from `VITE_RPCENDPOINT` env var. DAI contract address hardcoded to canonical mainnet `0x6B17…1d0F` (no ENS lookup). Re-exports `formatEther`, `formatUnits`, `getAddress` so the component layer doesn't import viem directly.
 - **State** (`src/store/`): Redux Toolkit with slices for `counter` (`counterSlice.ts`) and `common` (`commonSlice.ts`). Uses `configureStore`, `createSlice`, and typed hooks (`useAppDispatch`, `useAppSelector`).
 - **i18n** (`src/locale.ts`): i18next with `react-i18next`, static English translations from `src/locales/en.json`
 
@@ -155,7 +155,7 @@ Last reviewed: 2026-04-19 (post `/upgrade-analysis` Wave 1+2+3 applied). Review 
 - [x] ~~**Add `make e2e` target**~~ — done (2026-04-19), KinD + `cloud-provider-kind` (LoadBalancer with real IPs on the kind Docker network — portfolio default) + `e2e/e2e-test.sh` (curl) + `e2e/account-form.spec.ts` (Playwright); CI `e2e` + `dast` jobs gated `if: vars.ACT != 'true'`
 - [x] ~~**Harden image publish pipeline**~~ — done (2026-04-19), Pattern A: build-for-scan (load:true) → Trivy image scan (CRITICAL/HIGH blocking) → smoke test → multi-arch push → cosign keyless OIDC signing by digest. Separate `dast` job (OWASP ZAP baseline) parallel with `docker`. `provenance: false` + `sbom: false` keep GHCR "OS / Arch" tab rendering.
 - [x] ~~**Dockerfile: migrate from `npm install -g pnpm` to corepack**~~ — done (2026-04-19), both Dockerfiles use `corepack enable pnpm`; `packageManager` field in package.json declares `pnpm@10.33.0`
-- [ ] **Wave 4: ethers.js → viem migration** — Re-confirmed 2026-04-19: ethers last commit 2026-02-13 (2+ mo), last release v6.16.0 on 2025-12-03 (4+ mo), 638 open issues, bus factor 1 (`ricmoo`). viem actively released (latest viem@2.48.1 on 2026-04-17), 3446⭐, 34 open issues. Migration scope: rewrite `src/service/ether/ether.ts` against viem's `createPublicClient`/`getBalance`/`formatEther` (eliminates the `Promise.all([assignment-side-effect])` pattern), rewrite both test files at `src/service/ether/__tests__/`. Both libraries are MIT — clean license migration. Effort: ~1 day.
+- [x] ~~**Wave 4: ethers.js → viem migration**~~ — done (2026-04-19). Replaced `ethers.JsonRpcProvider`/`ethers.Contract` with viem's `createPublicClient` + `readContract` (mainnet chain, http transport). DAI ENS lookup (`dai.tokens.ethers.eth`) replaced by hardcoded canonical address `0x6B17…1d0F`. Service API now returns typed result objects instead of mutating module-level `let` exports — eliminates the `Promise.all([assignment-side-effect])` pattern. AccountForm reads from returned values. Tests rewritten: unit mocks `createPublicClient`, integration uses real RPC, AccountForm component test mocks the full module surface. vite.config.ts vendor chunk renamed `vendor-ethers` → `vendor-viem` (~253 KB, comparable size).
 - [ ] **Wave 4: MUI v7 → v9** — `@mui/material` and `@mui/icons-material` are two majors behind (7.3.9 → 9.0.0). Stepwise: v7 → v8 (theme overhaul, `Grid` → `Grid2`), then v8 → v9 (layout breaking changes). Files affected: `src/components/AccountForm.tsx`, `src/components/Layout.tsx`, `src/theme.tsx`. Effort: 1–2 days incl. visual regression checks.
 - [x] ~~**K8s deployment: enable resource requests/limits**~~ — done (2026-04-19), conservative defaults (cpu 10m/200m, mem 32Mi/64Mi) + per-init `5m/100m` and `16Mi/32Mi`.
 - [x] ~~**K8s deployment: add securityContext**~~ — done (2026-04-19), pod-level `runAsNonRoot:true, runAsUser:101, runAsGroup:101, fsGroup:101, seccompProfile:RuntimeDefault`; container-level `readOnlyRootFilesystem:true, allowPrivilegeEscalation:false, capabilities.drop:[ALL]`. Init container `seed-html` copies baked HTML to a writable emptyDir so `start-nginx.sh`'s envsubst can rewrite the bundled JS at startup. `.trivyignore` cleared.

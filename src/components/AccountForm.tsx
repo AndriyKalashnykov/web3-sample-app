@@ -2,91 +2,70 @@
 import React, { useEffect, useState } from 'react'
 import { t } from 'i18next'
 import {
-  DAIBalance,
-  DAIblock,
-  ETHbalance,
-  ETHblock,
+  formatEther,
+  getAddress,
   getDAIBalance,
   getETHBalance,
-  getProvider,
-  provider,
 } from '@/service/ether'
-import { ethers } from 'ethers'
+
 const RPCENDPOINT = import.meta.env.VITE_RPCENDPOINT ?? 'not configured'
 const ERRMSG = 'Could not retrieve info from blockchain using\n'
 
-const AccountForm = () => {
-  const delay = (ms: number) => new Promise((res) => setTimeout(res, ms))
+function isValidAddress(value: string): boolean {
+  try {
+    getAddress(value)
+    return true
+  } catch {
+    return false
+  }
+}
 
+const AccountForm = () => {
   const [destinationAddress, setDestinationAddress] = useState('')
   const [balance, setBalance] = useState<bigint>(0n)
   const [block, setBlock] = useState(0)
   const [asset, setAsset] = useState('ETH')
   const [disable, setDisable] = useState(false)
 
-  const getBlock = async () => {
-    try {
-      getProvider()
-      await provider.getBlockNumber()
-      const block = await provider.getBlockNumber()
-      setBlock(block)
-    } catch (error) {
-      setBlock(0)
-    }
-  }
-
   useEffect(() => {
-    getBlock()
-    getBalance()
+    void getBalance()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const getBalance = async (event?: any) => {
-    if (ethers.isAddress(destinationAddress)) {
+  const getBalance = async (_event?: unknown) => {
+    if (isValidAddress(destinationAddress)) {
       setDisable(true)
     }
     setBalance(0n)
     setBlock(0)
-    let assetCbValue: string = (
+    const assetCbValue: string = (
       document.getElementById('selectAsset') as HTMLInputElement
     ).value
 
-    if (assetCbValue == 'ETH') {
-      try {
-        getProvider()
-        await provider.getBlockNumber()
-        await getETHBalance(destinationAddress)
-        setBalance(ETHbalance)
-        setBlock(ETHblock)
-      } catch (e) {
-        console.error(e)
-        alert(ERRMSG + RPCENDPOINT)
+    try {
+      if (assetCbValue == 'ETH') {
+        const result = await getETHBalance(destinationAddress)
+        setBalance(result.balance)
+        setBlock(Number(result.block))
+      } else {
+        const result = await getDAIBalance(destinationAddress)
+        setBalance(result.balance)
+        setBlock(Number(result.block))
       }
-    } else {
-      try {
-        getProvider()
-        await provider.getBlockNumber()
-        await getDAIBalance(destinationAddress)
-        setBalance(DAIBalance)
-        setBlock(DAIblock)
-      } catch (e) {
-        console.error(e)
-        alert(ERRMSG + RPCENDPOINT)
-      }
+    } catch (e) {
+      console.error(e)
+      alert(ERRMSG + RPCENDPOINT)
+    } finally {
+      setDisable(false)
     }
-    setDisable(false)
   }
 
   const handleChange = (event?: React.ChangeEvent<HTMLSelectElement>) => {
     try {
       setAsset(event!.target.value)
-      getBalance(event)
+      void getBalance(event)
     } catch (e) {
       console.log(e instanceof Error ? e.message : e)
-      if (typeof e === 'string') {
-        e.toUpperCase()
-      } else if (e instanceof Error) {
-        console.log(e.message)
-      }
     }
   }
 
@@ -102,11 +81,9 @@ const AccountForm = () => {
             setDestinationAddress(event.target.value)
           }}
           onKeyUp={() => {
-            getBalance()
+            void getBalance()
           }}
         />
-        {/*<select value={asset} disabled={disable} name="selectAsset" id="selectAsset" className="text-neutral-700"*/}
-        {/*        onChange={(e) => setAsset(e.target.value)}>*/}
         <select
           value={asset}
           disabled={disable}
@@ -122,7 +99,7 @@ const AccountForm = () => {
 
       <div className="pt-1 font-bold text-neutral-700">
         <>
-          {t('balance')}: {ethers.formatEther(balance)}
+          {t('balance')}: {formatEther(balance)}
         </>
       </div>
       <div className="pt-1 font-bold text-neutral-700">

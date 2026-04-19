@@ -28,8 +28,8 @@ export default defineConfig({
           if (id.includes('node_modules/@mui') || id.includes('node_modules/@emotion')) {
             return 'vendor-mui'
           }
-          if (id.includes('node_modules/ethers')) {
-            return 'vendor-ethers'
+          if (id.includes('node_modules/viem') || id.includes('node_modules/@noble') || id.includes('node_modules/@scure') || id.includes('node_modules/abitype') || id.includes('node_modules/isows') || id.includes('node_modules/ws')) {
+            return 'vendor-viem'
           }
         },
       },

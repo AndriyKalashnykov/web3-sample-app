@@ -5,7 +5,7 @@
 
 # Web3 Sample App
 
-Reference React SPA that queries ETH and DAI ERC-20 balances from the Ethereum blockchain via ethers.js v6, packaged as a non-root nginx container and deployable to Kubernetes.
+Reference React SPA that queries ETH and DAI ERC-20 balances from the Ethereum blockchain via viem, packaged as a non-root nginx container and deployable to Kubernetes.
 
 | Component | Technology |
 |-----------|------------|
@@ -14,7 +14,7 @@ Reference React SPA that queries ETH and DAI ERC-20 balances from the Ethereum b
 | Build tool | Vite 8 (oxc minifier, Rolldown manual chunks) |
 | UI | MUI v7, Tailwind CSS v4 (`@tailwindcss/postcss`) |
 | State | Redux Toolkit 2 (`createSlice`, typed hooks) |
-| Web3 | ethers.js v6 (`JsonRpcProvider`, `Contract`) |
+| Web3 | viem 2 (`createPublicClient`, `http`, `readContract`, `parseAbi`) |
 | i18n | i18next + react-i18next (English bundled) |
 | Testing | Vitest 4, React Testing Library, jsdom |
 | Container | Builder: `node:24.15.0-alpine`; runtime: `nginxinc/nginx-unprivileged:1.29.8-alpine` (port 8080, runs as UID 101) |
@@ -28,9 +28,9 @@ C4Context
     title System Context — Web3 Sample App
 
     Person(user, "End User", "Browser, supplies an Ethereum address")
-    System(spa, "Web3 Sample App", "React 19 SPA, nginx-served, queries balances")
-    System_Ext(rpc, "Ethereum JSON-RPC", "Provider configured via VITE_RPCENDPOINT")
-    System_Ext(dai, "DAI ERC-20 Contract", "dai.tokens.ethers.eth on Ethereum mainnet")
+    System(spa, "Web3 Sample App", "React 19 SPA, viem 2, nginx-served")
+    System_Ext(rpc, "Ethereum JSON-RPC", "viem PublicClient, mainnet, http transport via VITE_RPCENDPOINT")
+    System_Ext(dai, "DAI ERC-20 Contract", "0x6B17…1d0F on Ethereum mainnet")
 
     Rel(user, spa, "Uses", "HTTPS")
     Rel(spa, rpc, "getBalance / getBlockNumber", "JSON-RPC over HTTPS")
@@ -67,7 +67,7 @@ The SPA is a single React app served from a static nginx image. All blockchain c
 
 1. `src/main.tsx` mounts `<App>` wrapped in MUI `ThemeProvider` + Redux `Provider`.
 2. `src/App.tsx` renders the `Header`/`Footer` layout with `BrowserRouter`. Routes are defined in `src/router/index.ts` and lazy-loaded with `React.lazy` + `<Suspense>`.
-3. The Ethereum service (`src/service/ether/ether.ts`) constructs a `JsonRpcProvider` against `VITE_RPCENDPOINT` and exposes `getETHBalance(address)` and `getDAIBalance(address)`. The DAI ERC-20 contract is resolved via the ENS name `dai.tokens.ethers.eth`.
+3. The Ethereum service (`src/service/ether/ether.ts`) constructs a viem `PublicClient` against `VITE_RPCENDPOINT` (mainnet, `http` transport) and exposes `getETHBalance(address)` → `{block, balance}` and `getDAIBalance(address)` → `{block, name, symbol, balance, balanceFormatted}`. The DAI ERC-20 contract is hardcoded to its canonical mainnet address `0x6B17…1d0F` (no ENS lookup).
 4. State lives in `src/store/` — Redux Toolkit slices (`counterSlice`, `commonSlice`) accessed through typed hooks (`useAppDispatch`, `useAppSelector`).
 
 ### Runtime env-var injection
@@ -86,26 +86,27 @@ sequenceDiagram
   actor User
   participant SPA as React SPA<br/>(AccountForm)
   participant Ether as Ether service<br/>(ether.ts)
-  participant Provider as ethers.JsonRpcProvider
+  participant Client as viem.PublicClient<br/>(mainnet, http transport)
   participant RPC as Ethereum JSON-RPC<br/>(VITE_RPCENDPOINT)
-  participant DAI as DAI ERC-20 Contract<br/>(dai.tokens.ethers.eth)
+  participant DAI as DAI ERC-20<br/>(0x6B17…1d0F)
 
   User->>SPA: enter address, click "Get Balance"
   SPA->>Ether: getETHBalance(address)
-  Ether->>Provider: new JsonRpcProvider(VITE_RPCENDPOINT)
-  Provider->>RPC: eth_blockNumber
-  RPC-->>Provider: block height
-  Provider->>RPC: eth_getBalance(address)
-  RPC-->>Provider: balance (wei)
-  Provider-->>Ether: { block, balance }
-  Ether-->>SPA: ETHbalance, ETHblock
-  SPA-->>User: render balance + block number
+  Ether->>Client: createPublicClient({chain: mainnet, transport: http(...)})
+  Ether->>Client: Promise.all([getBlockNumber(), getBalance({address})])
+  Client->>RPC: eth_blockNumber + eth_getBalance
+  RPC-->>Client: { block, balance (wei) }
+  Client-->>Ether: { block, balance }
+  Ether-->>SPA: { block, balance }
+  SPA-->>User: render balance (formatEther) + block number
 
-  Note over SPA,DAI: DAI flow adds a Contract call against the ENS-resolved DAI ERC-20
+  Note over SPA,DAI: DAI flow adds 3 contract reads (name + symbol + balanceOf) in parallel
   SPA->>Ether: getDAIBalance(address)
-  Ether->>DAI: balanceOf(address) via ethers.Contract
-  DAI-->>Ether: balance (uint256)
-  Ether-->>SPA: DAIBalance, DAIblock
+  Ether->>Client: Promise.all([getBlockNumber(), readContract×3])
+  Client->>DAI: name() + symbol() + balanceOf(address)
+  DAI-->>Client: ('Dai Stablecoin', 'DAI', balance uint256)
+  Client-->>Ether: { block, name, symbol, balance, balanceFormatted }
+  Ether-->>SPA: { block, name, symbol, balance, balanceFormatted }
   SPA-->>User: render DAI balance
 ```
 
