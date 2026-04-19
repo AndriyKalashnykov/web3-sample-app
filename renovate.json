@@ -4,22 +4,30 @@
     "config:best-practices",
     ":semanticCommitType(chore)"
   ],
-  "commitMessagePrefix": "chore(all): ",
-  "commitBody": "Signed-off-by: Renovate Bot <bot@renovateapp.com>",
-  "labels": [
-    "dependencies"
+  "enabledManagers": [
+    "npm",
+    "github-actions",
+    "dockerfile",
+    "kubernetes",
+    "mise",
+    "custom.regex"
   ],
+  "kubernetes": {
+    "managerFilePatterns": ["/^k8s/.+\\.yaml$/"]
+  },
+  "commitMessagePrefix": "chore(all): ",
+  "commitMessageAction": "update",
+  "commitBody": "Signed-off-by: Renovate Bot <bot@renovateapp.com>",
+  "labels": ["dependencies"],
   "prConcurrentLimit": 50,
   "prHourlyLimit": 0,
   "platformAutomerge": true,
   "automerge": true,
-  "automergeType": "branch",
+  "automergeType": "pr",
   "automergeStrategy": "squash",
   "ignoreTests": false,
   "vulnerabilityAlerts": {
-    "labels": [
-      "security"
-    ],
+    "labels": ["security"],
     "automerge": true,
     "minimumReleaseAge": "0 days"
   },
@@ -33,139 +41,54 @@
   "customManagers": [
     {
       "customType": "regex",
-      "description": "Track nvm version in Makefile",
+      "description": "Update Makefile tool versions via inline renovate comments",
       "managerFilePatterns": ["/^Makefile$/"],
       "matchStrings": [
-        "NVM_VERSION\\s*:=\\s*(?<currentValue>\\S+)"
-      ],
-      "depNameTemplate": "nvm-sh/nvm",
-      "datasourceTemplate": "github-tags",
-      "extractVersionTemplate": "^v(?<version>.*)$"
+        "# renovate: datasource=(?<datasource>[^\\s]+) depName=(?<depName>[^\\s]+)( versioning=(?<versioning>[^\\s]+))?\\n[A-Z_]+\\s*:=\\s*(?<currentValue>[^\\s]+)"
+      ]
     },
     {
       "customType": "regex",
-      "description": "Track pnpm version in Makefile",
-      "managerFilePatterns": ["/^Makefile$/"],
+      "description": "Update .mise.toml aqua: pins via inline renovate comments",
+      "managerFilePatterns": ["/^\\.mise\\.toml$/"],
       "matchStrings": [
-        "PNPM_VERSION\\s*:=\\s*(?<currentValue>\\S+)"
-      ],
-      "depNameTemplate": "pnpm",
-      "datasourceTemplate": "npm"
-    },
-    {
-      "customType": "regex",
-      "description": "Track act version in Makefile",
-      "managerFilePatterns": ["/^Makefile$/"],
-      "matchStrings": [
-        "ACT_VERSION\\s*:=\\s*(?<currentValue>\\S+)"
-      ],
-      "depNameTemplate": "nektos/act",
-      "datasourceTemplate": "github-releases",
-      "extractVersionTemplate": "^v(?<version>.*)$"
-    },
-    {
-      "customType": "regex",
-      "description": "Track hadolint version in Makefile",
-      "managerFilePatterns": ["/^Makefile$/"],
-      "matchStrings": [
-        "HADOLINT_VERSION\\s*:=\\s*(?<currentValue>\\S+)"
-      ],
-      "depNameTemplate": "hadolint/hadolint",
-      "datasourceTemplate": "github-releases",
-      "extractVersionTemplate": "^v(?<version>.*)$"
-    },
-    {
-      "customType": "regex",
-      "description": "Track kubectl version in Makefile",
-      "managerFilePatterns": ["/^Makefile$/"],
-      "matchStrings": [
-        "KUBECTL_VERSION\\s*:=\\s*(?<currentValue>\\S+)"
-      ],
-      "depNameTemplate": "kubernetes/kubernetes",
-      "datasourceTemplate": "github-releases",
-      "extractVersionTemplate": "^v(?<version>.*)$"
-    },
-    {
-      "customType": "regex",
-      "description": "Track kind version in Makefile",
-      "managerFilePatterns": ["/^Makefile$/"],
-      "matchStrings": [
-        "KIND_VERSION\\s*:=\\s*(?<currentValue>\\S+)"
-      ],
-      "depNameTemplate": "kubernetes-sigs/kind",
-      "datasourceTemplate": "github-releases",
-      "extractVersionTemplate": "^v(?<version>.*)$"
-    },
-    {
-      "customType": "regex",
-      "description": "Track yq version in Makefile",
-      "managerFilePatterns": ["/^Makefile$/"],
-      "matchStrings": [
-        "YQ_VERSION\\s*:=\\s*(?<currentValue>\\S+)"
-      ],
-      "depNameTemplate": "mikefarah/yq",
-      "datasourceTemplate": "github-releases",
-      "extractVersionTemplate": "^v(?<version>.*)$"
-    },
-    {
-      "customType": "regex",
-      "description": "Track renovate version in Makefile",
-      "managerFilePatterns": ["/^Makefile$/"],
-      "matchStrings": [
-        "RENOVATE_VERSION\\s*:=\\s*(?<currentValue>\\S+)"
-      ],
-      "depNameTemplate": "renovate",
-      "datasourceTemplate": "npm"
+        "# renovate: datasource=(?<datasource>[^\\s]+) depName=(?<depName>[^\\s]+)( extractVersion=(?<extractVersion>[^\\s]+))?( versioning=(?<versioning>[^\\s]+))?\\n[\"a-zA-Z0-9_:/-]+\\s*=\\s*\"(?<currentValue>[^\"]+)\""
+      ]
     }
   ],
   "packageRules": [
     {
       "description": "Wait 3 days before automerging major updates",
-      "matchUpdateTypes": [
-        "major"
-      ],
+      "matchUpdateTypes": ["major"],
       "minimumReleaseAge": "3 days"
     },
     {
       "description": "Group GitHub Actions into one PR",
-      "matchManagers": [
-        "github-actions"
-      ],
+      "matchManagers": ["github-actions"],
       "groupName": "GitHub Actions"
     },
     {
       "description": "Group devDependencies non-major updates",
-      "matchDepTypes": [
-        "devDependencies"
-      ],
-      "matchUpdateTypes": [
-        "minor",
-        "patch"
-      ],
+      "matchDepTypes": ["devDependencies"],
+      "matchUpdateTypes": ["minor", "patch"],
       "groupName": "dev-dependencies",
       "automerge": true
     },
     {
       "description": "Group type definitions",
-      "matchPackageNames": [
-        "/^@types\\//"
-      ],
+      "matchPackageNames": ["/^@types\\//"],
       "groupName": "type-definitions",
       "automerge": true
     },
     {
       "description": "Group Docker base images",
-      "matchDatasources": [
-        "docker"
-      ],
+      "matchDatasources": ["docker"],
       "groupName": "Docker dependencies"
     },
     {
-      "description": "Group Makefile tool versions",
-      "matchManagers": [
-        "custom.regex"
-      ],
-      "groupName": "Makefile tools"
+      "description": "Group mise + Makefile tool versions into one PR",
+      "matchManagers": ["mise", "custom.regex"],
+      "groupName": "mise & Makefile tools"
     }
   ]
 }

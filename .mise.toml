@@ -1,0 +1,31 @@
+[tools]
+# Source of truth for tool versions across local dev and CI.
+# Renovate tracks these via the `mise` manager and the `.mise.toml`
+# custom regex below (for inline `# renovate:` annotations on aqua: pins).
+
+# Node.js LTS — kept in sync with engines.node range in package.json.
+node = "24"
+
+# pnpm package manager (canonical core mise backend).
+pnpm = "10.33.0"
+
+# renovate: datasource=github-releases depName=nektos/act extractVersion=^v(?<version>.*)$
+"aqua:nektos/act" = "0.2.87"
+
+# renovate: datasource=github-releases depName=hadolint/hadolint extractVersion=^v(?<version>.*)$
+"aqua:hadolint/hadolint" = "2.14.0"
+
+# renovate: datasource=github-releases depName=kubernetes/kubectl extractVersion=^v(?<version>.*)$
+"aqua:kubernetes/kubectl" = "1.35.3"
+
+# renovate: datasource=github-releases depName=kubernetes-sigs/kind extractVersion=^v(?<version>.*)$
+"aqua:kubernetes-sigs/kind" = "0.31.0"
+
+# renovate: datasource=github-releases depName=mikefarah/yq extractVersion=^v(?<version>.*)$
+"aqua:mikefarah/yq" = "4.52.5"
+
+# renovate: datasource=github-releases depName=aquasecurity/trivy extractVersion=^v(?<version>.*)$
+"aqua:aquasecurity/trivy" = "0.69.3"
+
+# renovate: datasource=github-releases depName=gitleaks/gitleaks extractVersion=^v(?<version>.*)$
+"aqua:gitleaks/gitleaks" = "8.28.0"

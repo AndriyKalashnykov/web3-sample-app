@@ -8,4 +8,5 @@ COPY package.json pnpm-lock.yaml .npmrc ./
 RUN pnpm install --frozen-lockfile
 COPY . .
 EXPOSE 8080
+USER node
 CMD ["pnpm", "run", "dev"]

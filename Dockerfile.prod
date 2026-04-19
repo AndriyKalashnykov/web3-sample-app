@@ -12,8 +12,17 @@ RUN pnpm build
 # https://hub.docker.com/r/nginxinc/nginx-unprivileged/tags
 FROM nginxinc/nginx-unprivileged:1.29.5-alpine@sha256:f99cc61bf1719f30230602036314ff6ba5dcede8965c5ed3ded71b8bbced3723 AS server
 
+LABEL org.opencontainers.image.title="Web3 Sample App" \
+      org.opencontainers.image.description="Web3 Sample App — React SPA querying Ethereum balances" \
+      org.opencontainers.image.licenses="MIT" \
+      org.opencontainers.image.vendor="Andriy Kalashnykov <andriykalashnykov@gmail.com>" \
+      io.artifacthub.package.readme-url="https://raw.githubusercontent.com/AndriyKalashnykov/web3-sample-app/main/README.md" \
+      io.artifacthub.package.maintainers='[{"name":"Andriy Kalashnykov","email":"andriykalashnykov@gmail.com"}]' \
+      io.artifacthub.package.license="MIT"
+
 COPY --from=builder --chown=nginx:nginx ./app/nginx/nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=builder --chown=nginx:nginx ./app/dist /usr/share/nginx/html
 EXPOSE 8080
 COPY --from=builder --chown=nginx:nginx ./app/start-nginx.sh /tmp/start-nginx.sh
+USER 101
 ENTRYPOINT ["sh","/tmp/start-nginx.sh"]
