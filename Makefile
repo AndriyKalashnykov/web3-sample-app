@@ -307,7 +307,24 @@ endif
 	@git tag --delete $(TAG)
 	@echo "Deleted tag $(TAG)"
 
-#kind-create: @ Create a local KinD cluster (idempotent — no-op if cluster exists)
+#kind-up: @ Bring the full stack up — cluster + cloud-provider-kind + image + manifests (compose-up alias)
+kind-up: kind-deploy
+	@$(KUBECTL_NS) wait --for=condition=available --timeout=180s deployment/$(APP_NAME) >/dev/null
+	@bash -c 'for i in $$(seq 1 60); do \
+		LB_IP=$$($(KUBECTL_NS) get svc $(APP_NAME) -o jsonpath="{.status.loadBalancer.ingress[0].ip}"); \
+		[ -n "$$LB_IP" ] && break; \
+		sleep 1; \
+	done; \
+	[ -z "$$LB_IP" ] && { echo "ERROR: no LoadBalancer IP after 60s"; exit 1; }; \
+	echo "======================================"; \
+	echo "Stack is up — open http://$$LB_IP:8080"; \
+	echo "======================================"'
+
+#kind-down: @ Tear down the full stack — workload + cluster + cloud-provider-kind (compose-down alias)
+kind-down: kind-destroy
+	@echo "Stack is down."
+
+#kind-create: @ Create a local KinD cluster (idempotent; granular — prefer `make kind-up`)
 kind-create: deps-k8s
 	@kind get clusters 2>/dev/null | grep -q "^$(KIND_CLUSTER_NAME)$$" || \
 		kind create cluster \
@@ -407,6 +424,6 @@ cleanup-images:
 	test test-watch test-coverage integration-test e2e e2e-browser run \
 	image-build image-build-prod image-run image-stop docker-smoke-test dast dast-scan \
 	ci ci-run ci-run-tag release tag-delete \
-	kind-create kind-destroy kind-cloud-provider-start kind-cloud-provider-stop \
+	kind-up kind-down kind-create kind-destroy kind-cloud-provider-start kind-cloud-provider-stop \
 	kind-deploy kind-undeploy kind-redeploy deps-prune deps-prune-check renovate-validate \
 	cleanup-runs cleanup-images
