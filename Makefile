@@ -10,10 +10,10 @@ MISE_DATA_DIR  := $(HOME)/.local/share/mise
 export PATH := $(MISE_DATA_DIR)/shims:$(LOCAL_BIN):$(PATH)
 
 # renovate: datasource=docker depName=minlag/mermaid-cli
-MERMAID_CLI_VERSION := 11.4.2
+MERMAID_CLI_VERSION := 11.12.0
 
 # renovate: datasource=docker depName=kindest/node
-KIND_NODE_IMAGE := v1.34.0
+KIND_NODE_IMAGE := v1.35.1
 
 # renovate: datasource=github-releases depName=zaproxy/zaproxy extractVersion=^v(?<version>.*)$
 ZAP_VERSION := 2.17.0

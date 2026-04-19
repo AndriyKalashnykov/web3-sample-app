@@ -16,22 +16,22 @@ pnpm = "10.33.0"
 "aqua:hadolint/hadolint" = "2.14.0"
 
 # renovate: datasource=github-releases depName=kubernetes/kubectl extractVersion=^v(?<version>.*)$
-"aqua:kubernetes/kubectl" = "1.35.3"
+"aqua:kubernetes/kubectl" = "1.35.4"
 
 # renovate: datasource=github-releases depName=kubernetes-sigs/kind extractVersion=^v(?<version>.*)$
 "aqua:kubernetes-sigs/kind" = "0.31.0"
 
 # renovate: datasource=github-releases depName=mikefarah/yq extractVersion=^v(?<version>.*)$
-"aqua:mikefarah/yq" = "4.52.5"
+"aqua:mikefarah/yq" = "4.53.2"
 
 # renovate: datasource=github-releases depName=aquasecurity/trivy extractVersion=^v(?<version>.*)$
-"aqua:aquasecurity/trivy" = "0.69.3"
+"aqua:aquasecurity/trivy" = "0.70.0"
 
 # renovate: datasource=github-releases depName=gitleaks/gitleaks extractVersion=^v(?<version>.*)$
-"aqua:gitleaks/gitleaks" = "8.28.0"
+"aqua:gitleaks/gitleaks" = "8.30.1"
 
 # renovate: datasource=npm depName=renovate
-"npm:renovate" = "43.110.14"
+"npm:renovate" = "43.132.0"
 
 # renovate: datasource=github-releases depName=kubernetes-sigs/cloud-provider-kind extractVersion=^v(?<version>.*)$
 "aqua:kubernetes-sigs/cloud-provider-kind" = "0.10.0"

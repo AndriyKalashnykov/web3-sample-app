@@ -1,5 +1,5 @@
 # https://hub.docker.com/_/node/tags
-FROM node:24.14-alpine@sha256:01743339035a5c3c11a373cd7c83aeab6ed1457b55da6a69e014a95ac4e4700b AS builder
+FROM node:24.15.0-alpine@sha256:8e2c930fda481a6ec141fe5a88e8c249c69f8102fe98af505f38c081649ea749 AS builder
 RUN apk --no-cache add git
 RUN corepack enable pnpm
 
@@ -18,7 +18,7 @@ ENV VITE_RPCENDPOINT='$VITE_RPCENDPOINT' \
 RUN pnpm build
 
 # https://hub.docker.com/r/nginxinc/nginx-unprivileged/tags
-FROM nginxinc/nginx-unprivileged:1.29.5-alpine@sha256:f99cc61bf1719f30230602036314ff6ba5dcede8965c5ed3ded71b8bbced3723 AS server
+FROM nginxinc/nginx-unprivileged:1.29.8-alpine@sha256:30c5bce612513c0fcd49d5a349cb99f7a214d174f7455f7107eeccfd10a68b02 AS server
 
 LABEL org.opencontainers.image.title="Web3 Sample App" \
       org.opencontainers.image.description="Web3 Sample App — React SPA querying Ethereum balances" \

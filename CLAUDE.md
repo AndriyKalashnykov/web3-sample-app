@@ -142,7 +142,7 @@ The `docker` job in `ci.yml` ships images on tag pushes. See README "Pre-push im
 
 ## Upgrade Backlog
 
-Last reviewed: 2026-04-19. Review on next pass — resolve actionable items, remove stale ones.
+Last reviewed: 2026-04-19 (post `/upgrade-analysis` Wave 1+2+3 applied). Review on next pass — resolve actionable items, remove stale ones.
 
 - [x] ~~**Remove stale `.eslintrc.js`**~~ — deleted (2026-04-03)
 - [x] ~~**Remove dead `src/service/_api/` and `src/utils/util.ts`**~~ — deleted (2026-04-04)
@@ -156,9 +156,17 @@ Last reviewed: 2026-04-19. Review on next pass — resolve actionable items, rem
 - [x] ~~**Harden image publish pipeline**~~ — done (2026-04-19), Pattern A: build-for-scan (load:true) → Trivy image scan (CRITICAL/HIGH blocking) → smoke test → multi-arch push → cosign keyless OIDC signing by digest. Separate `dast` job (OWASP ZAP baseline) parallel with `docker`. `provenance: false` + `sbom: false` keep GHCR "OS / Arch" tab rendering.
 - [x] ~~**Dockerfile: migrate from `npm install -g pnpm` to corepack**~~ — done (2026-04-19), both Dockerfiles use `corepack enable pnpm`; `packageManager` field in package.json declares `pnpm@10.33.0`
 - [ ] **Harden image publish pipeline** — current `docker` job pushes without Trivy image scan, smoke test, or cosign signing. Run `/harden-image-pipeline` for the canonical Pattern A migration.
-- [ ] **Evaluate ethers.js → viem migration** — Bus factor = 1 (ricmoo), no release since 2025-12-03, no commits since 2026-02-13, 635 open issues. viem has 464 contributors, multiple releases/month, near npm download parity. Migration effort: major.
+- [ ] **Wave 4: ethers.js → viem migration** — Re-confirmed 2026-04-19: ethers last commit 2026-02-13 (2+ mo), last release v6.16.0 on 2025-12-03 (4+ mo), 638 open issues, bus factor 1 (`ricmoo`). viem actively released (latest viem@2.48.1 on 2026-04-17), 3446⭐, 34 open issues. Migration scope: rewrite `src/service/ether/ether.ts` against viem's `createPublicClient`/`getBalance`/`formatEther` (eliminates the `Promise.all([assignment-side-effect])` pattern), rewrite both test files at `src/service/ether/__tests__/`. Both libraries are MIT — clean license migration. Effort: ~1 day.
+- [ ] **Wave 4: MUI v7 → v9** — `@mui/material` and `@mui/icons-material` are two majors behind (7.3.9 → 9.0.0). Stepwise: v7 → v8 (theme overhaul, `Grid` → `Grid2`), then v8 → v9 (layout breaking changes). Files affected: `src/components/AccountForm.tsx`, `src/components/Layout.tsx`, `src/theme.tsx`. Effort: 1–2 days incl. visual regression checks.
 - [x] ~~**K8s deployment: enable resource requests/limits**~~ — done (2026-04-19), conservative defaults (cpu 10m/200m, mem 32Mi/64Mi) + per-init `5m/100m` and `16Mi/32Mi`.
 - [x] ~~**K8s deployment: add securityContext**~~ — done (2026-04-19), pod-level `runAsNonRoot:true, runAsUser:101, runAsGroup:101, fsGroup:101, seccompProfile:RuntimeDefault`; container-level `readOnlyRootFilesystem:true, allowPrivilegeEscalation:false, capabilities.drop:[ALL]`. Init container `seed-html` copies baked HTML to a writable emptyDir so `start-nginx.sh`'s envsubst can rewrite the bundled JS at startup. `.trivyignore` cleared.
+
+### Open (post-`/upgrade-analysis` deferred items)
+
+- [ ] **`vite.config.ts` hardcodes `server.port: 8080`** — fine for dev (matches container/k8s/nginx), but PORT env var doesn't propagate there. Low priority; `.env.example` documents the coupling.
+- [ ] **e2e lazy-chunk regex (`assert_any_chunk_contains` in `e2e/e2e-test.sh`) is project-specific** — relies on the well-known prefix list `index|about|vendor-…|i18next|rolldown-runtime`. If a refactor introduces a new chunk basename (e.g. via Vite plugin reshuffle), the env-injection assertion silently misses it. Consider a more permissive enumeration (e.g. probe every `/assets/*.js` referenced anywhere transitively) when this becomes a problem.
+- [ ] **No SBOM published with the image** — Pattern A intentionally disables `sbom: true` to keep the GHCR "OS / Arch" tab rendering. If a downstream consumer needs an SPDX SBOM (e.g. `cosign download attestation --predicate-type https://spdx.dev/Document`), opt into Pattern B and accept the GHCR UI regression.
+- [ ] **Architecture diagram tech-strings will drift on every framework bump** — README's Mermaid `C4Context` block names `"React 19.2"`, `"TypeScript 6"`, `"Vite 8"`, `"ethers.js 6.16"`, `"nginx-unprivileged 1.29.5-alpine"`. Renovate cannot update these strings. Re-run `/architecture-diagrams` after Wave 4 lands (or any later major bump).
 
 ## Skills
 
