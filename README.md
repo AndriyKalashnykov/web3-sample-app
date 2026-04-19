@@ -186,17 +186,28 @@ The production Dockerfile is multi-stage: `node:24.15.0-alpine` builder → `ngi
 
 ### Local KinD cluster
 
+Two-command bring up / tear down (compose-style):
+
 ```bash
-make kind-create                  # create cluster (idempotent)
-make kind-cloud-provider-start    # start cloud-provider-kind in background (LB IPs for kind)
-make kind-deploy                  # build prod image, load, apply manifests (Service: LoadBalancer)
-make kind-redeploy                # update running deployment
-make kind-undeploy                # remove workload (cluster stays)
-make kind-cloud-provider-stop     # stop cloud-provider-kind background process
-make kind-destroy                 # delete the cluster (also stops cloud-provider-kind)
+make kind-up      # cluster + cloud-provider-kind + image + manifests; prints the LB URL when ready
+make kind-down    # full teardown (cluster + cloud-provider-kind)
 ```
 
-After `make kind-deploy`, the LoadBalancer Service gets an IP from `cloud-provider-kind` (a sigs.k8s.io project that runs envoy proxies on the kind Docker network). Get the IP and hit it:
+`make kind-up` is the canonical entry point — it chains `kind-create` → `kind-cloud-provider-start` → `image-build-prod` → `kind-deploy` → wait for the LoadBalancer IP, then prints `Stack is up — open http://<LB_IP>:8080`. The LoadBalancer IP comes from `cloud-provider-kind` (a sigs.k8s.io project that runs envoy proxies on the kind Docker network). No MetalLB / NodePort gymnastics required.
+
+Granular targets (for debugging flows):
+
+```bash
+make kind-create                  # create cluster only (idempotent)
+make kind-cloud-provider-start    # start cloud-provider-kind daemon
+make kind-cloud-provider-stop     # stop cloud-provider-kind daemon
+make kind-deploy                  # build prod image, load, apply manifests
+make kind-redeploy                # rebuild + recreate deployment
+make kind-undeploy                # remove workload only (cluster stays)
+make kind-destroy                 # delete cluster + stop cloud-provider-kind
+```
+
+Manual access after `make kind-up`:
 
 ```bash
 LB_IP=$(kubectl -n web3 get svc web3-sample-app -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
@@ -204,7 +215,7 @@ curl "http://${LB_IP}:8080/internal/isalive"
 xdg-open "http://${LB_IP}:8080"
 ```
 
-`make e2e` does this lookup automatically. No MetalLB / NodePort gymnastics required — `cloud-provider-kind` is the canonical "real LoadBalancer in kind" project.
+`make e2e` does the LB-IP lookup automatically.
 
 ### From the public GHCR image
 
@@ -278,13 +289,15 @@ Run `make help` to see the full list. Grouped by purpose:
 
 | Target | Description |
 |--------|-------------|
-| `make kind-create` | Create a local KinD cluster (idempotent) |
-| `make kind-destroy` | Delete the local KinD cluster + stop cloud-provider-kind |
-| `make kind-cloud-provider-start` | Start `cloud-provider-kind` in background (LB IPs for kind) |
-| `make kind-cloud-provider-stop` | Stop `cloud-provider-kind` background process |
-| `make kind-deploy` | Build prod image + create cluster + start cloud-provider-kind + apply manifests |
-| `make kind-undeploy` | Remove workload (cluster + cloud-provider-kind stay) |
-| `make kind-redeploy` | Same as kind-deploy but recreates the deployment |
+| `make kind-up` | Compose-style bring-up: cluster + cloud-provider-kind + image + manifests + wait + print LB URL |
+| `make kind-down` | Compose-style teardown: workload + cluster + cloud-provider-kind |
+| `make kind-create` | (granular) Create a local KinD cluster (idempotent) |
+| `make kind-destroy` | (granular) Delete the local KinD cluster + stop cloud-provider-kind |
+| `make kind-cloud-provider-start` | (granular) Start `cloud-provider-kind` in background |
+| `make kind-cloud-provider-stop` | (granular) Stop `cloud-provider-kind` background process |
+| `make kind-deploy` | (granular) Build prod image + create cluster + start cloud-provider-kind + apply manifests |
+| `make kind-undeploy` | (granular) Remove workload (cluster + cloud-provider-kind stay) |
+| `make kind-redeploy` | (granular) Same as kind-deploy but recreates the deployment |
 
 ### CI
 
