@@ -2,7 +2,12 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: web3-sample-app
+  labels:
+    app.kubernetes.io/name: web3-sample-app
+    app.kubernetes.io/component: web
 spec:
+  replicas: 1
+  revisionHistoryLimit: 3
   selector:
     matchLabels:
       app: web3-sample-app
@@ -10,25 +15,100 @@ spec:
     metadata:
       labels:
         app: web3-sample-app
+        app.kubernetes.io/name: web3-sample-app
+        app.kubernetes.io/component: web
     spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101
+        runAsGroup: 101
+        fsGroup: 101
+        seccompProfile:
+          type: RuntimeDefault
+      # readOnlyRootFilesystem on the main container blocks start-nginx.sh's
+      # envsubst write to /usr/share/nginx/html/assets/. The init container
+      # seeds a writable emptyDir with the baked HTML; the main container
+      # mounts that emptyDir over /usr/share/nginx/html so start-nginx.sh
+      # can rewrite the bundled JS at startup.
+      initContainers:
+        - name: seed-html
+          image: ghcr.io/andriykalashnykov/web3-sample-app:v0.0.14
+          imagePullPolicy: IfNotPresent
+          command:
+            - sh
+            - -c
+            - cp -R /usr/share/nginx/html/. /work/
+          volumeMounts:
+            - name: nginx-html
+              mountPath: /work
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            requests:
+              cpu: 5m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 32Mi
       containers:
         - name: web3-sample-app
+          # Renovate-tracked via dockerfile manager (image:tag in this YAML).
           image: ghcr.io/andriykalashnykov/web3-sample-app:v0.0.14
-          env:
-            - name: PORT
-              value: '8080'
-            - name: VITE_RPCENDPOINT
-              valueFrom:
-                configMapKeyRef:
-                  name: web3-sample-app-config
-                  key: VITE_RPCENDPOINT
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: web3-sample-app-config
           ports:
-            - containerPort: 8080
-#          resources:
-#            requests:
-#              cpu: '1m'
-#              memory: '6Mi'
-#            limits:
-#              cpu: '3m'
-#              memory: '8Mi'
-      restartPolicy: Always
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          volumeMounts:
+            - name: nginx-html
+              mountPath: /usr/share/nginx/html
+            - name: tmp
+              mountPath: /tmp
+            - name: nginx-cache
+              mountPath: /var/cache/nginx
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 200m
+              memory: 64Mi
+          startupProbe:
+            httpGet:
+              path: /internal/isalive
+              port: http
+            failureThreshold: 30
+            periodSeconds: 1
+          livenessProbe:
+            httpGet:
+              path: /internal/isalive
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 2
+          readinessProbe:
+            httpGet:
+              path: /internal/isready
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 2
+      volumes:
+        - name: nginx-html
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+        - name: nginx-cache
+          emptyDir: {}
