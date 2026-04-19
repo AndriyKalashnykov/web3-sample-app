@@ -55,8 +55,8 @@ const LanguageSwitch = () => {
       <Menu
         open={open}
         anchorEl={anchorEl}
-        MenuListProps={{
-          'aria-labelledby': 'btn-language-picker',
+        slotProps={{
+          list: { 'aria-labelledby': 'btn-language-picker' },
         }}
       >
         {Object.keys(languageList).map((key, index) => (
