@@ -119,10 +119,24 @@ The production Dockerfile is multi-stage: `node:24-alpine` builder → `nginxinc
 ### Local KinD cluster
 
 ```bash
-make kind-deploy     # builds image, loads into kind, applies manifests
-make kind-undeploy   # tear down
-make kind-redeploy   # update running deployment
+make kind-create                  # create cluster (idempotent)
+make kind-cloud-provider-start    # start cloud-provider-kind in background (LB IPs for kind)
+make kind-deploy                  # build prod image, load, apply manifests (Service: LoadBalancer)
+make kind-redeploy                # update running deployment
+make kind-undeploy                # remove workload (cluster stays)
+make kind-cloud-provider-stop     # stop cloud-provider-kind background process
+make kind-destroy                 # delete the cluster (also stops cloud-provider-kind)
 ```
+
+After `make kind-deploy`, the LoadBalancer Service gets an IP from `cloud-provider-kind` (a sigs.k8s.io project that runs envoy proxies on the kind Docker network). Get the IP and hit it:
+
+```bash
+LB_IP=$(kubectl -n web3 get svc web3-sample-app -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+curl "http://${LB_IP}:8080/internal/isalive"
+xdg-open "http://${LB_IP}:8080"
+```
+
+`make e2e` does this lookup automatically. No MetalLB / NodePort gymnastics required — `cloud-provider-kind` is the canonical "real LoadBalancer in kind" project.
 
 ### From the public GHCR image
 
@@ -188,23 +202,29 @@ Run `make help` to see the full list. Grouped by purpose:
 | `make image-build-prod` | Build production Docker image (`Dockerfile.prod`) |
 | `make image-run` | Run image on port 8080 |
 | `make image-stop` | Stop the running container |
+| `make docker-smoke-test` | Build prod image + boot + curl `/internal/isalive` (CI Gate 3 mirror) |
+| `make dast` | Local DAST: smoke-test + ZAP baseline against `:8080`; cleans up |
+| `make dast-scan` | Run ZAP baseline against an already-running smoke container |
 
 ### Kubernetes
 
 | Target | Description |
 |--------|-------------|
 | `make kind-create` | Create a local KinD cluster (idempotent) |
-| `make kind-destroy` | Delete the local KinD cluster |
-| `make kind-deploy` | Deploy to a local KinD cluster |
-| `make kind-undeploy` | Undeploy from a local KinD cluster |
-| `make kind-redeploy` | Redeploy to a local KinD cluster |
+| `make kind-destroy` | Delete the local KinD cluster + stop cloud-provider-kind |
+| `make kind-cloud-provider-start` | Start `cloud-provider-kind` in background (LB IPs for kind) |
+| `make kind-cloud-provider-stop` | Stop `cloud-provider-kind` background process |
+| `make kind-deploy` | Build prod image + create cluster + start cloud-provider-kind + apply manifests |
+| `make kind-undeploy` | Remove workload (cluster + cloud-provider-kind stay) |
+| `make kind-redeploy` | Same as kind-deploy but recreates the deployment |
 
 ### CI
 
 | Target | Description |
 |--------|-------------|
-| `make ci` | Full pipeline: install + static-check + test + build |
-| `make ci-run` | Run the GitHub Actions workflow locally via [act](https://github.com/nektos/act) |
+| `make ci` | Full pipeline: install + static-check + test + integration-test + build |
+| `make ci-run` | Run the GitHub Actions workflow locally via [act](https://github.com/nektos/act) (e2e + dast skipped via `vars.ACT`) |
+| `make ci-run-tag` | Run the workflow under act with a synthetic tag-push event (exercises the `docker` job + `dast`; cosign expected to fail under act, no OIDC) |
 
 ### Utilities
 
@@ -229,9 +249,38 @@ GitHub Actions runs on every push to `main`, every tag `v*`, every pull request,
 | **test** | after static-check | `make test` (unit + component) |
 | **integration-test** | after static-check | `make integration-test` (real-RPC integration suite) |
 | **build** | after static-check | `make build`; uploads `dist/` artifact |
-| **e2e** | after build + test (skipped under act) | KinD-based curl e2e — `make e2e` |
-| **docker** | after static-check + build + test, **tag push only** | Multi-arch (`linux/amd64,linux/arm64`) build + push to GHCR with `provenance: false` and `sbom: false` |
+| **e2e** | after build + test (skipped under act) | KinD + cloud-provider-kind LoadBalancer + curl assertions — `make e2e` |
+| **dast** | after build + test (skipped under act) | OWASP ZAP baseline scan against booted container; ZAP image cached |
+| **docker** | after static-check + build + test, **tag push only** | Pre-push gates (Trivy image scan, smoke test) → multi-arch build + push → cosign keyless signing |
 | **ci-pass** | always (after all above) | Aggregator gate; fails if any upstream job failed |
+
+### Pre-push image hardening
+
+The `docker` job runs the following gates **before** any image is pushed to GHCR. Any failure blocks the release.
+
+| # | Gate | Catches | Tool |
+|---|------|---------|------|
+| 1 | Build single-arch image (`load: true`, linux/amd64) | Build regressions on the runner architecture | `docker/build-push-action` |
+| 2 | **Trivy image scan** (CRITICAL/HIGH blocking) | CVEs in base image, OS packages, build layers, secrets, misconfigs | `aquasecurity/trivy-action` |
+| 3 | **Smoke test** | nginx fails to boot or `/internal/isalive` doesn't respond | `docker run` + `curl` |
+| 4 | Multi-arch build + push (`linux/amd64,linux/arm64`) | Publishes for both architectures with `cache-from: type=gha` (~95% cache hit from Gate 1) | `docker/build-push-action` |
+| 5 | **Cosign keyless OIDC signing** | Sigstore signature on the manifest digest (Rekor transparency log) | `sigstore/cosign-installer` + `cosign sign --yes <tag>@<digest>` |
+
+The parallel `dast` job adds:
+
+| Gate | Catches | Tool |
+|------|---------|------|
+| **OWASP ZAP baseline** | Missing security headers, misconfigs, info leaks (`-I` = WARN-only; FAIL blocks; report uploaded) | `make dast-scan` |
+
+`provenance: false` and `sbom: false` keep the OCI image index free of `unknown/unknown` attestation entries so the GHCR Packages "OS / Arch" tab renders. Cosign signing alone provides supply-chain verification.
+
+Verify a published image's signature:
+
+```bash
+cosign verify ghcr.io/andriykalashnykov/web3-sample-app:<tag> \
+  --certificate-identity-regexp 'https://github\.com/AndriyKalashnykov/web3-sample-app/.+' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+```
 
 Tool versions for CI come from `.mise.toml` via [`jdx/mise-action`](https://github.com/jdx/mise-action) — no version drift between local and CI.
 

@@ -1,12 +1,20 @@
 # https://hub.docker.com/_/node/tags
 FROM node:24.14-alpine@sha256:01743339035a5c3c11a373cd7c83aeab6ed1457b55da6a69e014a95ac4e4700b AS builder
 RUN apk --no-cache add git
-RUN npm --global install pnpm
+RUN corepack enable pnpm
 
 WORKDIR /app
 COPY package.json pnpm-lock.yaml .npmrc ./
 RUN pnpm install --frozen-lockfile
 COPY . .
+
+# Build-time placeholder values for the SPA's runtime-configurable env vars.
+# Vite bakes these literal `$NAME` strings into the bundle; start-nginx.sh's
+# envsubst replaces them at container startup with the actual runtime values
+# from the env (typically from the k8s ConfigMap). This is the indirection
+# that makes "build once, configure at deploy time" work.
+ENV VITE_RPCENDPOINT='$VITE_RPCENDPOINT' \
+    VITE_BASE_URL='$VITE_BASE_URL'
 RUN pnpm build
 
 # https://hub.docker.com/r/nginxinc/nginx-unprivileged/tags
@@ -23,6 +31,6 @@ LABEL org.opencontainers.image.title="Web3 Sample App" \
 COPY --from=builder --chown=nginx:nginx ./app/nginx/nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=builder --chown=nginx:nginx ./app/dist /usr/share/nginx/html
 EXPOSE 8080
-COPY --from=builder --chown=nginx:nginx ./app/start-nginx.sh /tmp/start-nginx.sh
+COPY --from=builder --chown=nginx:nginx ./app/start-nginx.sh /usr/local/bin/start-nginx.sh
 USER 101
-ENTRYPOINT ["sh","/tmp/start-nginx.sh"]
+ENTRYPOINT ["sh","/usr/local/bin/start-nginx.sh"]

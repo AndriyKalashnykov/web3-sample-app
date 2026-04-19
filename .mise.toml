@@ -29,3 +29,9 @@ pnpm = "10.33.0"
 
 # renovate: datasource=github-releases depName=gitleaks/gitleaks extractVersion=^v(?<version>.*)$
 "aqua:gitleaks/gitleaks" = "8.28.0"
+
+# renovate: datasource=npm depName=renovate
+"npm:renovate" = "43.110.14"
+
+# renovate: datasource=github-releases depName=kubernetes-sigs/cloud-provider-kind extractVersion=^v(?<version>.*)$
+"aqua:kubernetes-sigs/cloud-provider-kind" = "0.10.0"

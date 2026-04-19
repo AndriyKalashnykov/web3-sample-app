@@ -1,8 +1,4 @@
 # Trivy ignore list — entries here are tracked in CLAUDE.md "Upgrade Backlog".
 # Remove an entry once the corresponding backlog item ships.
 
-# Backlog: "K8s deployment: enable resource requests/limits" + "add securityContext"
-# (k8s/deployment.yaml currently has neither; bundling securityContext + resource
-# limits requires actual workload sizing data — split from this hardening pass.)
-AVD-KSV-0014
-AVD-KSV-0118
+# (No active ignores — k8s securityContext + resource limits shipped 2026-04-19.)

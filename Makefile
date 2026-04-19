@@ -9,17 +9,26 @@ MISE_DATA_DIR  := $(HOME)/.local/share/mise
 # tools resolve without per-recipe PATH gymnastics.
 export PATH := $(MISE_DATA_DIR)/shims:$(LOCAL_BIN):$(PATH)
 
-# renovate: datasource=npm depName=renovate
-RENOVATE_VERSION := 43.110.14
-
 # renovate: datasource=docker depName=minlag/mermaid-cli
 MERMAID_CLI_VERSION := 11.4.2
 
 # renovate: datasource=docker depName=kindest/node
 KIND_NODE_IMAGE := v1.34.0
 
+# renovate: datasource=github-releases depName=zaproxy/zaproxy extractVersion=^v(?<version>.*)$
+ZAP_VERSION := 2.17.0
+
 KIND_CLUSTER_NAME := kind
 K8S_NAMESPACE     := web3
+
+# Common kubectl invocation scoped to the project namespace.
+KUBECTL_NS := kubectl --namespace=$(K8S_NAMESPACE)
+
+# yq filter that injects the locally-built image tag into both the main
+# container and the seed-html init container in deployment.yaml.
+KIND_IMAGE_PATCH := \
+	.spec.template.spec.containers[0].image = "$(APP_NAME):$(CURRENTTAG)" | \
+	.spec.template.spec.initContainers[0].image = "$(APP_NAME):$(CURRENTTAG)"
 
 # Tools tracked via .mise.toml (single source of truth, Renovate-managed):
 #   node, pnpm, act, hadolint, kubectl, kind, yq, trivy, gitleaks
@@ -67,7 +76,7 @@ deps-secrets: deps
 
 #clean: @ Cleanup build artifacts
 clean:
-	@rm -rf node_modules/ dist/
+	@rm -rf node_modules/ dist/ zap-output/ e2e/playwright-report/ e2e/test-results/
 
 #install: @ Install NodeJS dependencies (pnpm install; uses --frozen-lockfile when CI=true)
 install: deps node_modules
@@ -150,33 +159,41 @@ integration-test: install
 
 #deps-playwright: @ Install Playwright Chromium browser for browser e2e
 deps-playwright: install
-	@npx --yes playwright install chromium
+	@pnpm dlx playwright install chromium
 
-#e2e: @ Deploy to KinD and run curl-based e2e suite (e2e/e2e-test.sh)
+#e2e: @ Deploy to KinD (LoadBalancer via cloud-provider-kind) and run curl-based e2e suite
 e2e: kind-create kind-deploy
-	@kubectl -n $(K8S_NAMESPACE) wait --for=condition=available --timeout=180s deployment/$(APP_NAME)
+	@$(KUBECTL_NS) wait --for=condition=available --timeout=180s deployment/$(APP_NAME)
 	@bash -c 'set -e; \
-		kubectl -n $(K8S_NAMESPACE) port-forward svc/$(APP_NAME) 8080:8080 >/tmp/web3-pf.log 2>&1 & \
-		PF_PID=$$!; \
-		trap "kill $$PF_PID 2>/dev/null || true" EXIT INT TERM; \
-		for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do \
-			curl -sf http://localhost:8080/internal/isalive >/dev/null 2>&1 && break; \
+		echo "Waiting for LoadBalancer IP..."; \
+		for i in $$(seq 1 60); do \
+			LB_IP=$$($(KUBECTL_NS) get svc $(APP_NAME) -o jsonpath="{.status.loadBalancer.ingress[0].ip}"); \
+			[ -n "$$LB_IP" ] && break; \
 			sleep 1; \
 		done; \
-		BASE=http://localhost:8080 ./e2e/e2e-test.sh'
+		[ -z "$$LB_IP" ] && { echo "ERROR: no LoadBalancer IP after 60s"; exit 1; }; \
+		echo "LB IP: $$LB_IP"; \
+		for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do \
+			curl -sf "http://$$LB_IP:8080/internal/isalive" >/dev/null 2>&1 && break; \
+			sleep 1; \
+		done; \
+		BASE="http://$$LB_IP:8080" ./e2e/e2e-test.sh'
 
-#e2e-browser: @ Run Playwright browser e2e against deployed SPA (after make e2e setup)
+#e2e-browser: @ Run Playwright browser e2e against deployed SPA via LoadBalancer IP
 e2e-browser: kind-create kind-deploy deps-playwright
-	@kubectl -n $(K8S_NAMESPACE) wait --for=condition=available --timeout=180s deployment/$(APP_NAME)
+	@$(KUBECTL_NS) wait --for=condition=available --timeout=180s deployment/$(APP_NAME)
 	@bash -c 'set -e; \
-		kubectl -n $(K8S_NAMESPACE) port-forward svc/$(APP_NAME) 8080:8080 >/tmp/web3-pf.log 2>&1 & \
-		PF_PID=$$!; \
-		trap "kill $$PF_PID 2>/dev/null || true" EXIT INT TERM; \
-		for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do \
-			curl -sf http://localhost:8080/internal/isalive >/dev/null 2>&1 && break; \
+		for i in $$(seq 1 60); do \
+			LB_IP=$$($(KUBECTL_NS) get svc $(APP_NAME) -o jsonpath="{.status.loadBalancer.ingress[0].ip}"); \
+			[ -n "$$LB_IP" ] && break; \
 			sleep 1; \
 		done; \
-		E2E_BASE_URL=http://localhost:8080 pnpm exec playwright test -c e2e/playwright.config.ts'
+		[ -z "$$LB_IP" ] && { echo "ERROR: no LoadBalancer IP after 60s"; exit 1; }; \
+		for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do \
+			curl -sf "http://$$LB_IP:8080/internal/isalive" >/dev/null 2>&1 && break; \
+			sleep 1; \
+		done; \
+		E2E_BASE_URL="http://$$LB_IP:8080" pnpm exec playwright test -c e2e/playwright.config.ts'
 
 #run: @ Start dev server on port 8080
 run: install
@@ -192,11 +209,67 @@ image-build-prod:
 
 #image-run: @ Run the locally-built image on port 8080
 image-run: image-stop
-	@docker run --rm -p 8080:8080 --name web3 $(APP_NAME):$(CURRENTTAG)
+	@docker run --rm -p 8080:8080 --name $(APP_NAME) $(APP_NAME):$(CURRENTTAG)
 
 #image-stop: @ Stop the running container
 image-stop:
-	@docker stop web3 || true
+	@docker stop $(APP_NAME) || true
+
+#docker-smoke-test: @ Build prod image, run it on 8080, probe /internal/isalive (mirrors CI Gate 3)
+docker-smoke-test: image-build-prod
+	@docker rm -f $(APP_NAME)-smoke 2>/dev/null || true
+	@docker run -d --name=$(APP_NAME)-smoke -p 8080:8080 $(APP_NAME):$(CURRENTTAG) >/dev/null
+	@echo "Waiting for nginx /internal/isalive ..."
+	@end=$$(( $$(date +%s) + 30 )); ok=1; \
+	while [ $$(date +%s) -lt $$end ]; do \
+		if curl -fsS http://localhost:8080/internal/isalive >/dev/null 2>&1; then ok=0; break; fi; \
+		sleep 1; \
+	done; \
+	if [ $$ok -ne 0 ]; then \
+		echo "FAIL: smoke test never reached /internal/isalive"; \
+		docker logs $(APP_NAME)-smoke; \
+		docker rm -f $(APP_NAME)-smoke >/dev/null; \
+		exit 1; \
+	fi; \
+	echo "PASS: $(APP_NAME) container booted nginx successfully"
+
+#dast-scan: @ Run OWASP ZAP baseline against an already-running smoke container on :8080 (CI gate)
+dast-scan:
+	@mkdir -p zap-output && chmod 777 zap-output
+	@docker run --rm --network host \
+		-v "$(PWD)/zap-output:/zap/wrk:rw" \
+		ghcr.io/zaproxy/zaproxy:$(ZAP_VERSION) \
+		zap-baseline.py \
+			-t http://localhost:8080 \
+			-I \
+			-r zap-report.html \
+			-J zap-report.json \
+			-w zap-report.md \
+		|| EXIT=$$?; \
+		exit $${EXIT:-0}
+	@echo "DAST report: $(PWD)/zap-output/zap-report.html"
+
+#dast: @ Local DAST: docker-smoke-test then ZAP baseline; cleans up the container
+dast: docker-smoke-test
+	@trap 'docker rm -f $(APP_NAME)-smoke 2>/dev/null || true' EXIT INT TERM; \
+	$(MAKE) dast-scan
+
+#ci-run-tag: @ Run the workflow under act with a synthetic tag-push event (exercises docker + dast)
+ci-run-tag: deps-act
+	@docker container prune -f 2>/dev/null || true
+	@TAG="$$(git describe --tags --abbrev=0 2>/dev/null || echo v0.0.0)"; \
+	echo '{"ref":"refs/tags/'"$$TAG"'"}' > /tmp/act-tag-event.json; \
+	echo "Using synthetic tag event for $$TAG"
+	@PORT=$$(shuf -i 40000-59999 -n 1); \
+	ARTIFACT_DIR=$$(mktemp -d -t act-artifacts.XXXXXX); \
+	echo "Using act port=$$PORT artifacts=$$ARTIFACT_DIR"; \
+	act push \
+		--eventpath /tmp/act-tag-event.json \
+		--container-architecture linux/amd64 \
+		--var ACT=true \
+		--artifact-server-port $$PORT \
+		--artifact-server-path $$ARTIFACT_DIR || true
+	@echo "Note: cosign signing will fail under act (no OIDC) — expected."
 
 #ci: @ Run full CI pipeline (install + static-check + test + integration-test + build)
 ci: install static-check test integration-test build
@@ -237,51 +310,74 @@ endif
 #kind-create: @ Create a local KinD cluster (idempotent — no-op if cluster exists)
 kind-create: deps-k8s
 	@kind get clusters 2>/dev/null | grep -q "^$(KIND_CLUSTER_NAME)$$" || \
-		kind create cluster --name $(KIND_CLUSTER_NAME) --image kindest/node:$(KIND_NODE_IMAGE)
+		kind create cluster \
+			--name $(KIND_CLUSTER_NAME) \
+			--image kindest/node:$(KIND_NODE_IMAGE)
 
-#kind-destroy: @ Delete the local KinD cluster
-kind-destroy: deps-k8s
-	@kind delete cluster --name $(KIND_CLUSTER_NAME) 2>/dev/null || true
+#kind-cloud-provider-start: @ Start cloud-provider-kind in background (provides LoadBalancer IPs to kind)
+kind-cloud-provider-start: deps-k8s
+	@if ! pgrep -f '^[^ ]*cloud-provider-kind$$' >/dev/null 2>&1; then \
+		echo "Starting cloud-provider-kind in background..."; \
+		nohup cloud-provider-kind >/tmp/cloud-provider-kind.log 2>&1 & \
+		sleep 2; \
+	fi
+	@PID=$$(pgrep -f '^[^ ]*cloud-provider-kind$$'); \
+	if [ -z "$$PID" ]; then \
+		echo "ERROR: cloud-provider-kind failed to start; see /tmp/cloud-provider-kind.log"; \
+		tail -20 /tmp/cloud-provider-kind.log 2>/dev/null || true; \
+		exit 1; \
+	fi; \
+	echo "cloud-provider-kind running (PID $$PID)"
 
-#kind-deploy: @ Deploy production image to a local KinD cluster
-kind-deploy: deps-k8s image-build-prod
-	@kind load docker-image $(APP_NAME):$(CURRENTTAG) -n kind && \
+#kind-cloud-provider-stop: @ Stop cloud-provider-kind background process
+kind-cloud-provider-stop:
+	@pkill -f '^[^ ]*cloud-provider-kind$$' 2>/dev/null || true
+
+#kind-destroy: @ Delete the local KinD cluster + stop cloud-provider-kind
+kind-destroy: kind-cloud-provider-stop
+	@command -v kind >/dev/null 2>&1 && kind delete cluster --name $(KIND_CLUSTER_NAME) 2>/dev/null || true
+
+#kind-deploy: @ Deploy production image to a local KinD cluster (LoadBalancer via cloud-provider-kind)
+kind-deploy: deps-k8s kind-create image-build-prod kind-cloud-provider-start
+	@kind load docker-image $(APP_NAME):$(CURRENTTAG) -n $(KIND_CLUSTER_NAME) && \
 	kubectl apply -f ./k8s/ns.yaml && \
-	kubectl apply -f ./k8s/cm.yaml --namespace=web3 && \
-	yq eval '.spec.template.spec.containers[0].image = "$(APP_NAME):$(CURRENTTAG)"' ./k8s/deployment.yaml | kubectl apply --namespace=web3 -f - && \
-	kubectl apply -f ./k8s/service.yaml --namespace=web3
+	$(KUBECTL_NS) apply -f ./k8s/cm.yaml && \
+	yq eval '$(KIND_IMAGE_PATCH)' ./k8s/deployment.yaml | $(KUBECTL_NS) apply -f - && \
+	$(KUBECTL_NS) apply -f ./k8s/service.yaml
 
 #kind-undeploy: @ Undeploy from a local KinD cluster
 kind-undeploy: deps-k8s
-	@kubectl delete -f ./k8s/deployment.yaml --namespace=web3 --ignore-not-found=true && \
-	kubectl delete -f ./k8s/cm.yaml --namespace=web3 --ignore-not-found=true && \
+	@$(KUBECTL_NS) delete -f ./k8s/deployment.yaml --ignore-not-found=true && \
+	$(KUBECTL_NS) delete -f ./k8s/cm.yaml --ignore-not-found=true && \
 	kubectl delete -f ./k8s/ns.yaml --ignore-not-found=true
 
-#kind-redeploy: @ Redeploy production image to a local KinD cluster
-kind-redeploy: deps-k8s image-build-prod
-	@kind load docker-image $(APP_NAME):$(CURRENTTAG) -n kind && \
-	kubectl delete -f ./k8s/deployment.yaml --namespace=web3 --ignore-not-found=true && \
-	kubectl apply -f ./k8s/cm.yaml --namespace=web3 && \
-	yq eval '.spec.template.spec.containers[0].image = "$(APP_NAME):$(CURRENTTAG)"' ./k8s/deployment.yaml | kubectl apply --namespace=web3 -f -
+#kind-redeploy: @ Redeploy production image to a local KinD cluster (idempotent — recreates ns+cm+svc if missing)
+kind-redeploy: deps-k8s kind-create image-build-prod kind-cloud-provider-start
+	@kind load docker-image $(APP_NAME):$(CURRENTTAG) -n $(KIND_CLUSTER_NAME) && \
+	kubectl apply -f ./k8s/ns.yaml && \
+	$(KUBECTL_NS) apply -f ./k8s/cm.yaml && \
+	$(KUBECTL_NS) delete -f ./k8s/deployment.yaml --ignore-not-found=true && \
+	yq eval '$(KIND_IMAGE_PATCH)' ./k8s/deployment.yaml | $(KUBECTL_NS) apply -f - && \
+	$(KUBECTL_NS) apply -f ./k8s/service.yaml
 
 #deps-prune: @ Check for unused npm dependencies (depcheck, advisory)
 deps-prune: install
 	@echo "=== Dependency Pruning ==="
 	@echo "--- Node: checking for unused packages ---"
-	@npx --yes depcheck --ignores="$(DEPCHECK_IGNORES)" 2>/dev/null || true
+	@pnpm dlx depcheck --ignores="$(DEPCHECK_IGNORES)" 2>/dev/null || true
 	@echo "=== Pruning complete ==="
 
 #deps-prune-check: @ Verify no prunable dependencies (CI gate)
 deps-prune-check: install
-	@npx --yes depcheck --ignores="$(DEPCHECK_IGNORES)" 2>/dev/null; \
+	@pnpm dlx depcheck --ignores="$(DEPCHECK_IGNORES)" 2>/dev/null; \
 	if [ $$? -ne 0 ]; then \
 		echo "ERROR: Unused dependencies found. Run 'make deps-prune' to identify them."; \
 		exit 1; \
 	fi
 
-#renovate-validate: @ Validate Renovate configuration
+#renovate-validate: @ Validate Renovate configuration (renovate provided by mise via npm:renovate)
 renovate-validate: deps
-	@npx --yes renovate@$(RENOVATE_VERSION) --platform=local
+	@renovate --platform=local
 
 #cleanup-runs: @ Delete workflow runs older than 7 days (keeps at least 5)
 cleanup-runs:
@@ -309,6 +405,8 @@ cleanup-images:
 .PHONY: help deps deps-act deps-hadolint deps-k8s deps-trivy deps-secrets deps-playwright clean install build lint vulncheck \
 	trivy-fs trivy-config secrets mermaid-lint static-check format check upgrade \
 	test test-watch test-coverage integration-test e2e e2e-browser run \
-	image-build image-build-prod image-run image-stop ci ci-run release tag-delete \
-	kind-create kind-destroy kind-deploy kind-undeploy kind-redeploy deps-prune deps-prune-check renovate-validate \
+	image-build image-build-prod image-run image-stop docker-smoke-test dast dast-scan \
+	ci ci-run ci-run-tag release tag-delete \
+	kind-create kind-destroy kind-cloud-provider-start kind-cloud-provider-stop \
+	kind-deploy kind-undeploy kind-redeploy deps-prune deps-prune-check renovate-validate \
 	cleanup-runs cleanup-images

@@ -95,23 +95,43 @@ Vite 8 with oxc minifier (not terser). Console and debugger statements are strip
 
 ## CI/CD
 
-- **ci.yml**: `static-check` → `test` + `build` (parallel) → `docker` (tag-push only) → `ci-pass` (aggregator). Uses `jdx/mise-action` to provision tools from `.mise.toml`. `static-check` job runs `make static-check` (composite of lint + vulncheck + trivy-fs + trivy-config + secrets + mermaid-lint + deps-prune-check). Docker job multi-arch (`linux/amd64,linux/arm64`) with `provenance: false` + `sbom: false` so the GHCR Packages "OS / Arch" tab renders.
-- **cleanup-runs.yml**: Weekly cleanup of old workflow runs (calls `make cleanup-runs`) + caches from merged branches.
-- **cleanup-images.yml**: Weekly cleanup of untagged GHCR images (calls `make cleanup-images`).
+- **ci.yml** job DAG: `static-check` → (`test`, `integration-test`, `build` parallel) → (`e2e`, `dast`, `docker` parallel) → `ci-pass` (aggregator).
+  - `static-check`: composite of lint + vulncheck + trivy-fs + trivy-config + secrets + mermaid-lint + deps-prune-check via `make static-check`.
+  - `integration-test`: real-RPC vitest suite (`make integration-test`).
+  - `e2e`: KinD + `cloud-provider-kind` (real LoadBalancer Service IPs on the kind Docker network) + curl assertions via `make e2e`. Gated `if: vars.ACT != 'true'`.
+  - `dast`: parallel with `docker`/`e2e`. Builds `:scan` image via shared cache, boots it, runs OWASP ZAP baseline (`-I`, FAIL-only blocking). Cached ZAP image (~3.4GB). Gated `if: vars.ACT != 'true'`. Uploads HTML/JSON/MD report.
+  - `docker` (tag-push only): Pattern A pre-push gates → multi-arch publish → cosign sign-by-digest.
+    - Gate 1: Build for scan (`load: true`, linux/amd64) into local docker daemon
+    - Gate 2: Trivy image scan (`CRITICAL,HIGH` blocking, `vuln,secret,misconfig` scanners)
+    - Gate 3: Smoke test (`docker run` + `curl /internal/isalive`)
+    - Build & push: multi-arch (`linux/amd64,linux/arm64`), `provenance: false` + `sbom: false` (keeps GHCR "OS / Arch" tab rendering)
+    - Cosign keyless OIDC signing by digest (requires `id-token: write`)
+  - `ci-pass`: aggregator gate.
+- All tools (Node, pnpm, hadolint, kubectl, kind, yq, Trivy, gitleaks, act, **renovate**) come from `.mise.toml` via `jdx/mise-action`. ZAP_VERSION pinned in Makefile + duplicated in workflow `env:` block (no shared source).
+- **cleanup-runs.yml**: Weekly cleanup of old workflow runs (`make cleanup-runs`) + caches from merged branches.
+- **cleanup-images.yml**: Weekly cleanup of untagged GHCR images (`make cleanup-images`).
 - All GitHub Actions pinned to commit SHAs. Renovate manages dependency updates with platform automerge enabled (major updates delayed 3 days).
+
+## Image Publishing & Hardening
+
+The `docker` job in `ci.yml` ships images on tag pushes. See README "Pre-push image hardening" for the user-facing gate table and `cosign verify` command. To re-harden / extend, run `/harden-image-pipeline`.
+
+`make ci-run-tag` exercises the `docker` job locally under act (synthetic tag-push event); cosign signing fails under act (no OIDC) — expected.
 
 ## Docker
 
-- **Dockerfile**: Dev image (Node alpine + pnpm dev server on port 8080)
-- **Dockerfile.prod**: Multi-stage build (Node builder → `nginxinc/nginx-unprivileged:1.29.5-alpine` on port 8080); OCI labels (artifacthub, vendor, license) baked in via `LABEL` instructions
-- **`.dockerignore`**: Excludes `node_modules`, `dist`, `.git`
+- **Dockerfile**: Dev image (Node alpine + pnpm dev server on port 8080); `corepack enable pnpm` (no `npm install -g`)
+- **Dockerfile.prod**: Multi-stage build (Node builder → `nginxinc/nginx-unprivileged:1.29.5-alpine` on port 8080, `USER 101`); OCI labels (artifacthub, vendor, license) baked in via `LABEL` instructions
+- **`packageManager` field** in `package.json` pins `pnpm@10.33.0` so corepack uses the project-declared version
+- **`.dockerignore`**: Excludes `node_modules`, `dist`, `.git`, `e2e`, `zap-output`, `playwright-report`, `test-results`, `.env`
 - **`.hadolint.yaml`**: Configures hadolint rule ignores for Dockerfile linting
+- **`nginx/nginx.conf`**: `server_tokens off;` (no version leak), `default_type` on probe routes (preserves security-header inheritance), `location /assets/ { try_files $uri =404; }` (missing assets 404 instead of SPA fallback)
 - Both Dockerfiles use `pnpm install --frozen-lockfile` and copy lockfiles before source for layer caching
 
 ## Conventions
 
-- Package manager: **pnpm** (not npm/yarn)
-- Tool versioning: **mise** via `.mise.toml` (single source of truth across local + CI)
+- Package manager: **pnpm only** (no `npm`, no `npx` — Makefile uses `pnpm dlx`; Dockerfiles use `corepack enable pnpm`; `packageManager` field in package.json)
+- Tool versioning: **mise** via `.mise.toml` (single source of truth across local + CI). Includes `npm:renovate`, `aqua:` pins for kubectl/kind/yq/hadolint/act/trivy/gitleaks. Docker-image tools (`MERMAID_CLI_VERSION`, `ZAP_VERSION`, `KIND_NODE_IMAGE`) stay as Makefile constants (Renovate-tracked) since mise can't manage Docker images directly.
 - Node.js: pinned in `.mise.toml` (currently `node = "24"`); `.node-version` retained as a fallback marker
 - TypeScript: **6.x** with `moduleResolution: "bundler"` (no `baseUrl`, no `esModuleInterop`)
 - Formatting: **prettier** only (no eslint)
@@ -132,12 +152,13 @@ Last reviewed: 2026-04-19. Review on next pass — resolve actionable items, rem
 - [x] ~~**CI: switch to `jdx/mise-action` and `make static-check`**~~ — done (2026-04-19)
 - [x] ~~**CI: add `ci-pass` aggregator job**~~ — done (2026-04-19)
 - [x] ~~**Isolate `ether.integration.test.ts` from `make test`**~~ — done (2026-04-19), `vitest.integration.config.ts` + `make integration-test` + dedicated CI job; default `make test` excludes `**/*.integration.test.*`
-- [x] ~~**Add `make e2e` target**~~ — done (2026-04-19), KinD + `kubectl port-forward` + `e2e/e2e-test.sh` (curl) + `e2e/account-form.spec.ts` (Playwright); CI `e2e` job gated `if: vars.ACT != 'true'`
+- [x] ~~**Add `make e2e` target**~~ — done (2026-04-19), KinD + `cloud-provider-kind` (LoadBalancer with real IPs on the kind Docker network — portfolio default) + `e2e/e2e-test.sh` (curl) + `e2e/account-form.spec.ts` (Playwright); CI `e2e` + `dast` jobs gated `if: vars.ACT != 'true'`
+- [x] ~~**Harden image publish pipeline**~~ — done (2026-04-19), Pattern A: build-for-scan (load:true) → Trivy image scan (CRITICAL/HIGH blocking) → smoke test → multi-arch push → cosign keyless OIDC signing by digest. Separate `dast` job (OWASP ZAP baseline) parallel with `docker`. `provenance: false` + `sbom: false` keep GHCR "OS / Arch" tab rendering.
+- [x] ~~**Dockerfile: migrate from `npm install -g pnpm` to corepack**~~ — done (2026-04-19), both Dockerfiles use `corepack enable pnpm`; `packageManager` field in package.json declares `pnpm@10.33.0`
 - [ ] **Harden image publish pipeline** — current `docker` job pushes without Trivy image scan, smoke test, or cosign signing. Run `/harden-image-pipeline` for the canonical Pattern A migration.
 - [ ] **Evaluate ethers.js → viem migration** — Bus factor = 1 (ricmoo), no release since 2025-12-03, no commits since 2026-02-13, 635 open issues. viem has 464 contributors, multiple releases/month, near npm download parity. Migration effort: major.
-- [ ] **K8s deployment: enable resource requests/limits** — Currently commented out in `k8s/deployment.yaml`. Required for production workloads.
-- [ ] **K8s deployment: add securityContext** — Missing `runAsNonRoot`, `readOnlyRootFilesystem` in `k8s/deployment.yaml`.
-- [ ] **Dockerfile: migrate from `npm install -g pnpm` to corepack** — Both Dockerfiles use `npm --global install pnpm`; modern Node.js ships corepack which manages pnpm natively (`corepack enable pnpm`).
+- [x] ~~**K8s deployment: enable resource requests/limits**~~ — done (2026-04-19), conservative defaults (cpu 10m/200m, mem 32Mi/64Mi) + per-init `5m/100m` and `16Mi/32Mi`.
+- [x] ~~**K8s deployment: add securityContext**~~ — done (2026-04-19), pod-level `runAsNonRoot:true, runAsUser:101, runAsGroup:101, fsGroup:101, seccompProfile:RuntimeDefault`; container-level `readOnlyRootFilesystem:true, allowPrivilegeEscalation:false, capabilities.drop:[ALL]`. Init container `seed-html` copies baked HTML to a writable emptyDir so `start-nginx.sh`'s envsubst can rewrite the bundled JS at startup. `.trivyignore` cleared.
 
 ## Skills
 
