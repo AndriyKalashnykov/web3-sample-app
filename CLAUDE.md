@@ -87,7 +87,7 @@ This is a React SPA that queries Ethereum blockchain balances (ETH and DAI) via 
 
 ### Styling
 
-Tailwind CSS v4 with `@tailwindcss/postcss`. Custom colors (`primary`, `secondary`) in `tailwind.config.js`. CSS files using `@apply` outside the main entry need `@reference "tailwindcss"` directive (see `src/App.css`). MUI v7 theme in `src/theme.tsx`.
+Tailwind CSS v4 with `@tailwindcss/postcss`. Custom colors (`primary`, `secondary`) in `tailwind.config.js`. CSS files using `@apply` outside the main entry need `@reference "tailwindcss"` directive (see `src/App.css`). MUI v9 theme in `src/theme.tsx`.
 
 ### Build
 
@@ -156,7 +156,7 @@ Last reviewed: 2026-04-19 (post `/upgrade-analysis` Wave 1+2+3 applied). Review 
 - [x] ~~**Harden image publish pipeline**~~ — done (2026-04-19), Pattern A: build-for-scan (load:true) → Trivy image scan (CRITICAL/HIGH blocking) → smoke test → multi-arch push → cosign keyless OIDC signing by digest. Separate `dast` job (OWASP ZAP baseline) parallel with `docker`. `provenance: false` + `sbom: false` keep GHCR "OS / Arch" tab rendering.
 - [x] ~~**Dockerfile: migrate from `npm install -g pnpm` to corepack**~~ — done (2026-04-19), both Dockerfiles use `corepack enable pnpm`; `packageManager` field in package.json declares `pnpm@10.33.0`
 - [x] ~~**Wave 4: ethers.js → viem migration**~~ — done (2026-04-19). Replaced `ethers.JsonRpcProvider`/`ethers.Contract` with viem's `createPublicClient` + `readContract` (mainnet chain, http transport). DAI ENS lookup (`dai.tokens.ethers.eth`) replaced by hardcoded canonical address `0x6B17…1d0F`. Service API now returns typed result objects instead of mutating module-level `let` exports — eliminates the `Promise.all([assignment-side-effect])` pattern. AccountForm reads from returned values. Tests rewritten: unit mocks `createPublicClient`, integration uses real RPC, AccountForm component test mocks the full module surface. vite.config.ts vendor chunk renamed `vendor-ethers` → `vendor-viem` (~253 KB, comparable size).
-- [ ] **Wave 4: MUI v7 → v9** — `@mui/material` and `@mui/icons-material` are two majors behind (7.3.9 → 9.0.0). Stepwise: v7 → v8 (theme overhaul, `Grid` → `Grid2`), then v8 → v9 (layout breaking changes). Files affected: `src/components/AccountForm.tsx`, `src/components/Layout.tsx`, `src/theme.tsx`. Effort: 1–2 days incl. visual regression checks.
+- [x] ~~**Wave 4: MUI v7 → v9**~~ — done (2026-04-19). MUI skipped v8 entirely; direct jump v7.3.9 → v9.0.0 (released 2026-04-08). Single breaking change in this codebase: `<Menu MenuListProps={{...}}>` → `<Menu slotProps={{ list: {...} }}>` in `Layout.tsx`. v9's headline changes (sx-prop perf, accessibility, deprecated-API cleanup) didn't affect any of our usage. vendor-mui chunk grew slightly (175 KB → 179 KB).
 - [x] ~~**K8s deployment: enable resource requests/limits**~~ — done (2026-04-19), conservative defaults (cpu 10m/200m, mem 32Mi/64Mi) + per-init `5m/100m` and `16Mi/32Mi`.
 - [x] ~~**K8s deployment: add securityContext**~~ — done (2026-04-19), pod-level `runAsNonRoot:true, runAsUser:101, runAsGroup:101, fsGroup:101, seccompProfile:RuntimeDefault`; container-level `readOnlyRootFilesystem:true, allowPrivilegeEscalation:false, capabilities.drop:[ALL]`. Init container `seed-html` copies baked HTML to a writable emptyDir so `start-nginx.sh`'s envsubst can rewrite the bundled JS at startup. `.trivyignore` cleared.
 

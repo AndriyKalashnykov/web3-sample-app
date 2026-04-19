@@ -12,7 +12,7 @@ Reference React SPA that queries ETH and DAI ERC-20 balances from the Ethereum b
 | Language | TypeScript 6.x (`moduleResolution: "bundler"`) |
 | Framework | React 19, react-router-dom 7 |
 | Build tool | Vite 8 (oxc minifier, Rolldown manual chunks) |
-| UI | MUI v7, Tailwind CSS v4 (`@tailwindcss/postcss`) |
+| UI | MUI v9, Tailwind CSS v4 (`@tailwindcss/postcss`) |
 | State | Redux Toolkit 2 (`createSlice`, typed hooks) |
 | Web3 | viem 2 (`createPublicClient`, `http`, `readContract`, `parseAbi`) |
 | i18n | i18next + react-i18next (English bundled) |
