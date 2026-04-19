@@ -44,14 +44,14 @@ make cleanup-images # delete untagged GHCR images, keep 5 (called by cleanup-ima
 
 ## Testing
 
-Three-layer test pyramid. Each layer has its own Makefile target, vitest/Playwright config, and CI job:
+Four-layer test pyramid. Each layer has its own Makefile target, vitest/Playwright config, and CI job:
 
 | Layer | Target | Config | Files | Speed | What it covers |
 |-------|--------|--------|-------|-------|----------------|
 | Unit + Component | `make test` | `vitest.config.ts` (excludes `**/*.integration.test.*`) | `src/store/models/__tests__/`, `src/service/ether/__tests__/ether.test.ts`, `src/components/__tests__/` | ~1s | Pure functions, Redux slices, mocked ether service, components rendered via `renderWithProviders` |
 | Integration | `make integration-test` | `vitest.integration.config.ts` (`include: ['**/*.integration.test.ts']`, 30s timeout, node env) | `src/service/ether/__tests__/ether.integration.test.ts` | ~5s | Ether service against the real `VITE_RPCENDPOINT` (block fetch, ETH/DAI balance, malformed-input negative paths) |
-| E2E (curl) | `make e2e` | `e2e/e2e-test.sh` | KinD-deployed SPA via `kubectl port-forward` | ~30s | nginx routes (`/internal/isalive`, `/internal/isready`, `/publicnode` → 307, SPA fallback, missing asset 404) + verifies `start-nginx.sh` substituted `VITE_RPCENDPOINT` into served JS |
-| E2E (browser) | `make e2e-browser` | `e2e/playwright.config.ts` + `e2e/account-form.spec.ts` | KinD-deployed SPA via Playwright Chromium | ~45s | AccountForm renders, real RPC roundtrip updates the displayed block number |
+| E2E (curl) | `make e2e` | `e2e/e2e-test.sh` | KinD + cloud-provider-kind LoadBalancer (kind Docker network IP) | ~30s | nginx routes (`/internal/isalive`, `/internal/isready`, `/publicnode` → 307, SPA fallback, missing asset 404) + verifies `start-nginx.sh` substituted `VITE_RPCENDPOINT` into served JS |
+| E2E (browser) | `make e2e-browser` | `e2e/playwright.config.ts` + `e2e/account-form.spec.ts` | KinD + cloud-provider-kind + Playwright Chromium | ~45s | AccountForm renders, real RPC roundtrip updates the displayed block number |
 
 Notes:
 - `make test` and `make integration-test` are independent — the `test` job runs unit + component (no network), `integration-test` job runs the real-RPC suite (needs outbound HTTPS).
@@ -121,7 +121,7 @@ The `docker` job in `ci.yml` ships images on tag pushes. See README "Pre-push im
 ## Docker
 
 - **Dockerfile**: Dev image (Node alpine + pnpm dev server on port 8080); `corepack enable pnpm` (no `npm install -g`)
-- **Dockerfile.prod**: Multi-stage build (Node builder → `nginxinc/nginx-unprivileged:1.29.5-alpine` on port 8080, `USER 101`); OCI labels (artifacthub, vendor, license) baked in via `LABEL` instructions
+- **Dockerfile.prod**: Multi-stage build (`node:24.15.0-alpine` builder → `nginxinc/nginx-unprivileged:1.29.8-alpine` on port 8080, `USER 101`); OCI labels (artifacthub, vendor, license) baked in via `LABEL` instructions; both stages pin base images by SHA256 digest
 - **`packageManager` field** in `package.json` pins `pnpm@10.33.0` so corepack uses the project-declared version
 - **`.dockerignore`**: Excludes `node_modules`, `dist`, `.git`, `e2e`, `zap-output`, `playwright-report`, `test-results`, `.env`
 - **`.hadolint.yaml`**: Configures hadolint rule ignores for Dockerfile linting
@@ -155,7 +155,6 @@ Last reviewed: 2026-04-19 (post `/upgrade-analysis` Wave 1+2+3 applied). Review 
 - [x] ~~**Add `make e2e` target**~~ — done (2026-04-19), KinD + `cloud-provider-kind` (LoadBalancer with real IPs on the kind Docker network — portfolio default) + `e2e/e2e-test.sh` (curl) + `e2e/account-form.spec.ts` (Playwright); CI `e2e` + `dast` jobs gated `if: vars.ACT != 'true'`
 - [x] ~~**Harden image publish pipeline**~~ — done (2026-04-19), Pattern A: build-for-scan (load:true) → Trivy image scan (CRITICAL/HIGH blocking) → smoke test → multi-arch push → cosign keyless OIDC signing by digest. Separate `dast` job (OWASP ZAP baseline) parallel with `docker`. `provenance: false` + `sbom: false` keep GHCR "OS / Arch" tab rendering.
 - [x] ~~**Dockerfile: migrate from `npm install -g pnpm` to corepack**~~ — done (2026-04-19), both Dockerfiles use `corepack enable pnpm`; `packageManager` field in package.json declares `pnpm@10.33.0`
-- [ ] **Harden image publish pipeline** — current `docker` job pushes without Trivy image scan, smoke test, or cosign signing. Run `/harden-image-pipeline` for the canonical Pattern A migration.
 - [ ] **Wave 4: ethers.js → viem migration** — Re-confirmed 2026-04-19: ethers last commit 2026-02-13 (2+ mo), last release v6.16.0 on 2025-12-03 (4+ mo), 638 open issues, bus factor 1 (`ricmoo`). viem actively released (latest viem@2.48.1 on 2026-04-17), 3446⭐, 34 open issues. Migration scope: rewrite `src/service/ether/ether.ts` against viem's `createPublicClient`/`getBalance`/`formatEther` (eliminates the `Promise.all([assignment-side-effect])` pattern), rewrite both test files at `src/service/ether/__tests__/`. Both libraries are MIT — clean license migration. Effort: ~1 day.
 - [ ] **Wave 4: MUI v7 → v9** — `@mui/material` and `@mui/icons-material` are two majors behind (7.3.9 → 9.0.0). Stepwise: v7 → v8 (theme overhaul, `Grid` → `Grid2`), then v8 → v9 (layout breaking changes). Files affected: `src/components/AccountForm.tsx`, `src/components/Layout.tsx`, `src/theme.tsx`. Effort: 1–2 days incl. visual regression checks.
 - [x] ~~**K8s deployment: enable resource requests/limits**~~ — done (2026-04-19), conservative defaults (cpu 10m/200m, mem 32Mi/64Mi) + per-init `5m/100m` and `16Mi/32Mi`.
@@ -166,7 +165,7 @@ Last reviewed: 2026-04-19 (post `/upgrade-analysis` Wave 1+2+3 applied). Review 
 - [ ] **`vite.config.ts` hardcodes `server.port: 8080`** — fine for dev (matches container/k8s/nginx), but PORT env var doesn't propagate there. Low priority; `.env.example` documents the coupling.
 - [ ] **e2e lazy-chunk regex (`assert_any_chunk_contains` in `e2e/e2e-test.sh`) is project-specific** — relies on the well-known prefix list `index|about|vendor-…|i18next|rolldown-runtime`. If a refactor introduces a new chunk basename (e.g. via Vite plugin reshuffle), the env-injection assertion silently misses it. Consider a more permissive enumeration (e.g. probe every `/assets/*.js` referenced anywhere transitively) when this becomes a problem.
 - [ ] **No SBOM published with the image** — Pattern A intentionally disables `sbom: true` to keep the GHCR "OS / Arch" tab rendering. If a downstream consumer needs an SPDX SBOM (e.g. `cosign download attestation --predicate-type https://spdx.dev/Document`), opt into Pattern B and accept the GHCR UI regression.
-- [ ] **Architecture diagram tech-strings will drift on every framework bump** — README's Mermaid `C4Context` block names `"React 19.2"`, `"TypeScript 6"`, `"Vite 8"`, `"ethers.js 6.16"`, `"nginx-unprivileged 1.29.5-alpine"`. Renovate cannot update these strings. Re-run `/architecture-diagrams` after Wave 4 lands (or any later major bump).
+- [ ] **Architecture diagram tech-strings will drift on every framework bump** — README has 3 Mermaid blocks (C4Context, sequenceDiagram, C4Deployment) that name framework versions (`"React 19.2"`, `"TypeScript 6"`, `"Vite 8"`, `"ethers.js 6.16"`, `"nginx-unprivileged 1.29.8 on :8080"`, `"kindest/node v1.35.1"`). Renovate cannot update these strings. Re-run `/architecture-diagrams` after Wave 4 lands (or any later major bump).
 
 ## Skills
 

@@ -17,7 +17,7 @@ Reference React SPA that queries ETH and DAI ERC-20 balances from the Ethereum b
 | Web3 | ethers.js v6 (`JsonRpcProvider`, `Contract`) |
 | i18n | i18next + react-i18next (English bundled) |
 | Testing | Vitest 4, React Testing Library, jsdom |
-| Container | Builder: `node:24-alpine`; runtime: `nginxinc/nginx-unprivileged:1.29.5-alpine` (port 8080) |
+| Container | Builder: `node:24.15.0-alpine`; runtime: `nginxinc/nginx-unprivileged:1.29.8-alpine` (port 8080, runs as UID 101) |
 | Orchestration | Kubernetes (manifests under `k8s/`); local KinD via Makefile |
 | CI/CD | GitHub Actions, Renovate (platform automerge) |
 | Code quality | Prettier, hadolint, Trivy (fs+config), gitleaks |
@@ -78,6 +78,74 @@ The SPA is a single React app served from a static nginx image. All blockchain c
 
 `@/` maps to `src/` — configured in both `tsconfig.json` (`paths`) and `vite.config.ts` (`resolve.alias`).
 
+### Balance-query sequence
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor User
+  participant SPA as React SPA<br/>(AccountForm)
+  participant Ether as Ether service<br/>(ether.ts)
+  participant Provider as ethers.JsonRpcProvider
+  participant RPC as Ethereum JSON-RPC<br/>(VITE_RPCENDPOINT)
+  participant DAI as DAI ERC-20 Contract<br/>(dai.tokens.ethers.eth)
+
+  User->>SPA: enter address, click "Get Balance"
+  SPA->>Ether: getETHBalance(address)
+  Ether->>Provider: new JsonRpcProvider(VITE_RPCENDPOINT)
+  Provider->>RPC: eth_blockNumber
+  RPC-->>Provider: block height
+  Provider->>RPC: eth_getBalance(address)
+  RPC-->>Provider: balance (wei)
+  Provider-->>Ether: { block, balance }
+  Ether-->>SPA: ETHbalance, ETHblock
+  SPA-->>User: render balance + block number
+
+  Note over SPA,DAI: DAI flow adds a Contract call against the ENS-resolved DAI ERC-20
+  SPA->>Ether: getDAIBalance(address)
+  Ether->>DAI: balanceOf(address) via ethers.Contract
+  DAI-->>Ether: balance (uint256)
+  Ether-->>SPA: DAIBalance, DAIblock
+  SPA-->>User: render DAI balance
+```
+
+Source: [`src/service/ether/ether.ts`](src/service/ether/ether.ts) and [`src/components/AccountForm.tsx`](src/components/AccountForm.tsx).
+
+### Deployment topology (KinD)
+
+```mermaid
+C4Deployment
+  title Deployment — KinD + cloud-provider-kind LoadBalancer
+
+  Person(user, "End User", "Browser")
+
+  Deployment_Node(host, "Developer Host", "Linux + Docker") {
+    Deployment_Node(cpk, "cloud-provider-kind", "Background daemon (mise)") {
+      Container(envoy, "envoy LB proxy", "Per-Service LB on kind Docker network")
+    }
+    Deployment_Node(cluster, "KinD cluster", "kindest/node v1.35.1") {
+      Deployment_Node(ns, "Namespace: web3") {
+        Deployment_Node(pod, "Pod (Deployment, replicas=1)") {
+          Container(init, "seed-html (init)", "Copies baked HTML to writable emptyDir")
+          Container(nginx, "web3-sample-app", "nginx-unprivileged 1.29.8 on :8080")
+        }
+        ContainerDb(cm, "ConfigMap", "web3-sample-app-config — VITE_RPCENDPOINT, VITE_BASE_URL, PORT")
+        Container(svc, "Service", "type: LoadBalancer, port 8080 → pod :8080")
+      }
+    }
+  }
+
+  System_Ext(rpc, "Ethereum JSON-RPC", "via VITE_RPCENDPOINT")
+
+  Rel(user, envoy, "HTTP", "to LB IP:8080")
+  Rel(envoy, svc, "Routes to")
+  Rel(svc, nginx, "Routes to")
+  Rel(nginx, cm, "Reads env from", "envFrom")
+  Rel(nginx, rpc, "JSON-RPC", "via baked + envsubst'd URL")
+```
+
+The `seed-html` init container copies the baked SPA bundle from the read-only image filesystem into a writable `emptyDir` mounted at `/usr/share/nginx/html`. The main container's `start-nginx.sh` then runs `envsubst` against the bundled JS (replacing the literal `$VITE_RPCENDPOINT` placeholder Vite baked at build time with the value from the ConfigMap) before nginx starts. This is what makes "build once, configure at deploy time" work despite `readOnlyRootFilesystem: true` on the main container.
+
 ## Testing
 
 Four test layers, each with its own Makefile target, config, and CI job:
@@ -86,8 +154,8 @@ Four test layers, each with its own Makefile target, config, and CI job:
 |-------|--------|-------|---------------|----------------|
 | Unit + Component | `make test` | `src/store/models/__tests__/`, `src/service/ether/__tests__/ether.test.ts`, `src/components/__tests__/` | jsdom (vitest, in-process) | Pure functions, Redux slices, mocked ether service, components rendered via `renderWithProviders` |
 | Integration | `make integration-test` | `src/service/ether/__tests__/ether.integration.test.ts` | node (vitest, real network) | Ether service against the real `VITE_RPCENDPOINT` (block fetch, ETH/DAI balance, malformed-input negatives) |
-| E2E — HTTP | `make e2e` | `e2e/e2e-test.sh` | KinD + `kubectl port-forward` | nginx routes (`/internal/isalive`, `/internal/isready`, `/publicnode` → 307, SPA fallback, missing asset 404) + verifies `start-nginx.sh` substituted `VITE_RPCENDPOINT` into served JS |
-| E2E — Browser | `make e2e-browser` | `e2e/playwright.config.ts`, `e2e/account-form.spec.ts` | KinD + Playwright Chromium | AccountForm renders + real RPC roundtrip updates the displayed block number |
+| E2E — HTTP | `make e2e` | `e2e/e2e-test.sh` | KinD + cloud-provider-kind LoadBalancer | nginx routes (`/internal/isalive`, `/internal/isready`, `/publicnode` → 307, SPA fallback, missing asset 404) + verifies `start-nginx.sh` substituted `VITE_RPCENDPOINT` into served JS |
+| E2E — Browser | `make e2e-browser` | `e2e/playwright.config.ts`, `e2e/account-form.spec.ts` | KinD + cloud-provider-kind + Playwright Chromium | AccountForm renders + real RPC roundtrip updates the displayed block number |
 
 ```bash
 make test               # unit + component (~1s)
@@ -112,7 +180,7 @@ make image-build         # dev image (Node alpine + pnpm dev server)
 make image-build-prod    # production image (nginx-unprivileged on 8080)
 ```
 
-The production Dockerfile is multi-stage: `node:24-alpine` builder → `nginxinc/nginx-unprivileged:1.29.5-alpine`. Both Dockerfiles use `pnpm install --frozen-lockfile` and copy lockfiles before source for layer caching.
+The production Dockerfile is multi-stage: `node:24.15.0-alpine` builder → `nginxinc/nginx-unprivileged:1.29.8-alpine`. Both Dockerfiles use `pnpm install --frozen-lockfile`, pin base images by SHA256 digest, and copy lockfiles before source for layer caching. The final image runs as non-root (UID 101) with `corepack`-provided pnpm.
 
 ## Deployment
 
