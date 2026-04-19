@@ -20,6 +20,13 @@ RUN pnpm build
 # https://hub.docker.com/r/nginxinc/nginx-unprivileged/tags
 FROM nginxinc/nginx-unprivileged:1.29.8-alpine@sha256:30c5bce612513c0fcd49d5a349cb99f7a214d174f7455f7107eeccfd10a68b02 AS server
 
+# Patch alpine packages newer than the upstream base image's bake date.
+# Most relevant currently: zlib (CVE-2026-22184, fixed in 1.3.2-r0). The
+# `apk upgrade` requires root; we drop back to UID 101 (nginx) below.
+USER root
+RUN apk --no-cache upgrade
+USER 101
+
 LABEL org.opencontainers.image.title="Web3 Sample App" \
       org.opencontainers.image.description="Web3 Sample App — React SPA querying Ethereum balances" \
       org.opencontainers.image.licenses="MIT" \
@@ -32,5 +39,4 @@ COPY --from=builder --chown=nginx:nginx ./app/nginx/nginx.conf /etc/nginx/conf.d
 COPY --from=builder --chown=nginx:nginx ./app/dist /usr/share/nginx/html
 EXPOSE 8080
 COPY --from=builder --chown=nginx:nginx ./app/start-nginx.sh /usr/local/bin/start-nginx.sh
-USER 101
 ENTRYPOINT ["sh","/usr/local/bin/start-nginx.sh"]
