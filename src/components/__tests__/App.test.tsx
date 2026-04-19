@@ -50,7 +50,9 @@ describe('App component', () => {
 
   it('renders the footer with version', () => {
     renderApp()
-    expect(screen.getByText(/v0\.0\.14/)).toBeInTheDocument()
+    // Loose match — pinning the literal version drifts on every release;
+    // the assertion that matters is that the footer renders SOME vN.N.N tag.
+    expect(screen.getByText(/v\d+\.\d+\.\d+/)).toBeInTheDocument()
   })
 
   it('renders without crashing', () => {
