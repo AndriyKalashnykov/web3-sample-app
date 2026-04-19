@@ -12,9 +12,12 @@ make install        # pnpm install (uses --frozen-lockfile when CI=true)
 make build          # tsc + vite build (depends on install)
 make lint           # prettier --check + hadolint
 make format         # prettier --write
-make test           # vitest run (excludes *.integration.test.*)
+make test           # vitest run (unit + component, excludes *.integration.test.*)
 make test-watch     # vitest in watch mode
 make test-coverage  # vitest with coverage report
+make integration-test # vitest run -c vitest.integration.config.ts (real RPC)
+make e2e            # KinD + curl assertions against deployed nginx (e2e/e2e-test.sh)
+make e2e-browser    # Playwright Chromium against the deployed SPA
 make run            # dev server at http://localhost:8080
 make vulncheck      # pnpm audit --audit-level=moderate
 make trivy-fs       # Trivy fs scan (vuln + secret + misconfig)
@@ -41,13 +44,20 @@ make cleanup-images # delete untagged GHCR images, keep 5 (called by cleanup-ima
 
 ## Testing
 
-Vitest with React Testing Library and jsdom. Config in `vitest.config.ts`, global setup in `src/test/setup.ts`.
+Three-layer test pyramid. Each layer has its own Makefile target, vitest/Playwright config, and CI job:
 
-- **Unit tests**: `src/store/models/__tests__/` (Redux Toolkit slices), `src/service/ether/__tests__/ether.test.ts` (ether service with mocked ethers.js)
-- **Component tests**: `src/components/__tests__/` (`AccountForm`, `Counter`, `App` — rendered via `renderWithProviders` which wraps in Redux + MUI Theme + MemoryRouter)
-- **Integration test (currently runs inside `make test` — open backlog item)**: `src/service/ether/__tests__/ether.integration.test.ts` calls a real RPC. To isolate it from `make test`, add a `vitest.integration.config.ts` with `include: ['**/*.integration.test.ts']`, an `integration-test` Makefile target, and exclude the pattern from the default vitest config — see `/test-coverage-analysis` for the canonical pattern.
+| Layer | Target | Config | Files | Speed | What it covers |
+|-------|--------|--------|-------|-------|----------------|
+| Unit + Component | `make test` | `vitest.config.ts` (excludes `**/*.integration.test.*`) | `src/store/models/__tests__/`, `src/service/ether/__tests__/ether.test.ts`, `src/components/__tests__/` | ~1s | Pure functions, Redux slices, mocked ether service, components rendered via `renderWithProviders` |
+| Integration | `make integration-test` | `vitest.integration.config.ts` (`include: ['**/*.integration.test.ts']`, 30s timeout, node env) | `src/service/ether/__tests__/ether.integration.test.ts` | ~5s | Ether service against the real `VITE_RPCENDPOINT` (block fetch, ETH/DAI balance, malformed-input negative paths) |
+| E2E (curl) | `make e2e` | `e2e/e2e-test.sh` | KinD-deployed SPA via `kubectl port-forward` | ~30s | nginx routes (`/internal/isalive`, `/internal/isready`, `/publicnode` → 307, SPA fallback, missing asset 404) + verifies `start-nginx.sh` substituted `VITE_RPCENDPOINT` into served JS |
+| E2E (browser) | `make e2e-browser` | `e2e/playwright.config.ts` + `e2e/account-form.spec.ts` | KinD-deployed SPA via Playwright Chromium | ~45s | AccountForm renders, real RPC roundtrip updates the displayed block number |
 
-The ether service unit tests mock `ethers.JsonRpcProvider` and `ethers.Contract` to avoid real network calls. Component tests mock the `@/service/ether` module entirely.
+Notes:
+- `make test` and `make integration-test` are independent — the `test` job runs unit + component (no network), `integration-test` job runs the real-RPC suite (needs outbound HTTPS).
+- `e2e` is gated `if: ${{ vars.ACT != 'true' }}` in CI because KinD inside act isn't reliable; run `make e2e` locally.
+- `e2e-browser` is local-dev only by default (Chromium download is heavy); promote to CI when browser-regression coverage becomes valuable.
+- The ether unit tests mock `ethers.JsonRpcProvider` and `ethers.Contract`; component tests mock the `@/service/ether` module entirely.
 
 ## Architecture
 
@@ -121,8 +131,8 @@ Last reviewed: 2026-04-19. Review on next pass — resolve actionable items, rem
 - [x] ~~**Add composite `static-check` Makefile target**~~ — done (2026-04-19), includes Trivy fs/config + gitleaks + mermaid-lint
 - [x] ~~**CI: switch to `jdx/mise-action` and `make static-check`**~~ — done (2026-04-19)
 - [x] ~~**CI: add `ci-pass` aggregator job**~~ — done (2026-04-19)
-- [ ] **Isolate `ether.integration.test.ts` from `make test`** — currently runs in default vitest pass on every PR, hitting `https://ethereum-rpc.publicnode.com`. Add `vitest.integration.config.ts` with `include: ['**/*.integration.test.ts']`, exclude the pattern from default config, and add `make integration-test` per `/test-coverage-analysis`.
-- [ ] **Add `make e2e` target** — k8s manifests exist but never validated by CI. KinD + cloud-provider-kind + curl/Playwright assertions through the LoadBalancer.
+- [x] ~~**Isolate `ether.integration.test.ts` from `make test`**~~ — done (2026-04-19), `vitest.integration.config.ts` + `make integration-test` + dedicated CI job; default `make test` excludes `**/*.integration.test.*`
+- [x] ~~**Add `make e2e` target**~~ — done (2026-04-19), KinD + `kubectl port-forward` + `e2e/e2e-test.sh` (curl) + `e2e/account-form.spec.ts` (Playwright); CI `e2e` job gated `if: vars.ACT != 'true'`
 - [ ] **Harden image publish pipeline** — current `docker` job pushes without Trivy image scan, smoke test, or cosign signing. Run `/harden-image-pipeline` for the canonical Pattern A migration.
 - [ ] **Evaluate ethers.js → viem migration** — Bus factor = 1 (ricmoo), no release since 2025-12-03, no commits since 2026-02-13, 635 open issues. viem has 464 contributors, multiple releases/month, near npm download parity. Migration effort: major.
 - [ ] **K8s deployment: enable resource requests/limits** — Currently commented out in `k8s/deployment.yaml`. Required for production workloads.

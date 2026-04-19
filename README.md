@@ -80,20 +80,22 @@ The SPA is a single React app served from a static nginx image. All blockchain c
 
 ## Testing
 
-Vitest with React Testing Library and jsdom. Three logical layers:
+Four test layers, each with its own Makefile target, config, and CI job:
 
-| Layer | Files | Speed | Notes |
-|-------|-------|-------|-------|
-| Unit | `src/store/models/__tests__/`, `src/service/ether/__tests__/ether.test.ts` | ms | Redux slices and ether service with `ethers` mocked |
-| Component | `src/components/__tests__/` | sub-second | Rendered with providers via `renderWithProviders` |
-| Integration | `src/service/ether/__tests__/ether.integration.test.ts` | seconds | Hits a real RPC endpoint — currently runs inside `make test` (see backlog) |
-
-Test commands:
+| Layer | Target | Files | Where it runs | What it covers |
+|-------|--------|-------|---------------|----------------|
+| Unit + Component | `make test` | `src/store/models/__tests__/`, `src/service/ether/__tests__/ether.test.ts`, `src/components/__tests__/` | jsdom (vitest, in-process) | Pure functions, Redux slices, mocked ether service, components rendered via `renderWithProviders` |
+| Integration | `make integration-test` | `src/service/ether/__tests__/ether.integration.test.ts` | node (vitest, real network) | Ether service against the real `VITE_RPCENDPOINT` (block fetch, ETH/DAI balance, malformed-input negatives) |
+| E2E — HTTP | `make e2e` | `e2e/e2e-test.sh` | KinD + `kubectl port-forward` | nginx routes (`/internal/isalive`, `/internal/isready`, `/publicnode` → 307, SPA fallback, missing asset 404) + verifies `start-nginx.sh` substituted `VITE_RPCENDPOINT` into served JS |
+| E2E — Browser | `make e2e-browser` | `e2e/playwright.config.ts`, `e2e/account-form.spec.ts` | KinD + Playwright Chromium | AccountForm renders + real RPC roundtrip updates the displayed block number |
 
 ```bash
-make test            # run tests once
-make test-watch      # watch mode
-make test-coverage   # coverage report
+make test               # unit + component (~1s)
+make test-watch         # watch mode
+make test-coverage      # coverage report
+make integration-test   # real-RPC integration (~5s, needs outbound HTTPS)
+make e2e                # full HTTP suite against deployed nginx (~30s)
+make e2e-browser        # Playwright browser e2e (~45s)
 ```
 
 A valid Ethereum address for manual UI testing:
@@ -154,9 +156,13 @@ Run `make help` to see the full list. Grouped by purpose:
 
 | Target | Description |
 |--------|-------------|
-| `make test` | Run unit tests (vitest) |
+| `make test` | Run unit + component tests (vitest, fast) |
 | `make test-watch` | Run tests in watch mode |
 | `make test-coverage` | Run tests with coverage report |
+| `make integration-test` | Run integration tests (real RPC via `VITE_RPCENDPOINT`) |
+| `make e2e` | Deploy to KinD + run curl-based e2e suite |
+| `make e2e-browser` | Run Playwright Chromium browser e2e against deployed SPA |
+| `make deps-playwright` | Install Playwright Chromium browser |
 
 ### Code Quality
 
@@ -187,6 +193,8 @@ Run `make help` to see the full list. Grouped by purpose:
 
 | Target | Description |
 |--------|-------------|
+| `make kind-create` | Create a local KinD cluster (idempotent) |
+| `make kind-destroy` | Delete the local KinD cluster |
 | `make kind-deploy` | Deploy to a local KinD cluster |
 | `make kind-undeploy` | Undeploy from a local KinD cluster |
 | `make kind-redeploy` | Redeploy to a local KinD cluster |
@@ -218,8 +226,10 @@ GitHub Actions runs on every push to `main`, every tag `v*`, every pull request,
 | Job | Triggers | Steps |
 |-----|----------|-------|
 | **static-check** | every event | `make install` + `make static-check` (lint, vulncheck, trivy-fs, trivy-config, secrets, mermaid-lint, deps-prune-check) |
-| **test** | after static-check | `make test` |
+| **test** | after static-check | `make test` (unit + component) |
+| **integration-test** | after static-check | `make integration-test` (real-RPC integration suite) |
 | **build** | after static-check | `make build`; uploads `dist/` artifact |
+| **e2e** | after build + test (skipped under act) | KinD-based curl e2e — `make e2e` |
 | **docker** | after static-check + build + test, **tag push only** | Multi-arch (`linux/amd64,linux/arm64`) build + push to GHCR with `provenance: false` and `sbom: false` |
 | **ci-pass** | always (after all above) | Aggregator gate; fails if any upstream job failed |
 

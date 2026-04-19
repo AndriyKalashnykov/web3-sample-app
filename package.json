@@ -13,7 +13,9 @@
     "prettier:diff": "prettier -l 'src/**/*.{ts,tsx,js,jsx}'",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "test:integration": "vitest run -c vitest.integration.config.ts",
+    "test:e2e:browser": "playwright test -c e2e/playwright.config.ts"
   },
   "dependencies": {
     "@emotion/react": "^11.14.0",
@@ -37,6 +39,7 @@
     "@types/node": "25.5.0",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
+    "@playwright/test": "1.56.1",
     "@vitejs/plugin-react": "6.0.1",
     "@vitest/coverage-v8": "4.1.2",
     "jsdom": "29.0.1",

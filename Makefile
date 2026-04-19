@@ -15,6 +15,12 @@ RENOVATE_VERSION := 43.110.14
 # renovate: datasource=docker depName=minlag/mermaid-cli
 MERMAID_CLI_VERSION := 11.4.2
 
+# renovate: datasource=docker depName=kindest/node
+KIND_NODE_IMAGE := v1.34.0
+
+KIND_CLUSTER_NAME := kind
+K8S_NAMESPACE     := web3
+
 # Tools tracked via .mise.toml (single source of truth, Renovate-managed):
 #   node, pnpm, act, hadolint, kubectl, kind, yq, trivy, gitleaks
 
@@ -138,6 +144,40 @@ test-watch: install
 test-coverage: install
 	@pnpm test:coverage
 
+#integration-test: @ Run integration tests (real RPC; uses VITE_RPCENDPOINT from .env)
+integration-test: install
+	@pnpm exec vitest run -c vitest.integration.config.ts
+
+#deps-playwright: @ Install Playwright Chromium browser for browser e2e
+deps-playwright: install
+	@npx --yes playwright install chromium
+
+#e2e: @ Deploy to KinD and run curl-based e2e suite (e2e/e2e-test.sh)
+e2e: kind-create kind-deploy
+	@kubectl -n $(K8S_NAMESPACE) wait --for=condition=available --timeout=180s deployment/$(APP_NAME)
+	@bash -c 'set -e; \
+		kubectl -n $(K8S_NAMESPACE) port-forward svc/$(APP_NAME) 8080:8080 >/tmp/web3-pf.log 2>&1 & \
+		PF_PID=$$!; \
+		trap "kill $$PF_PID 2>/dev/null || true" EXIT INT TERM; \
+		for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do \
+			curl -sf http://localhost:8080/internal/isalive >/dev/null 2>&1 && break; \
+			sleep 1; \
+		done; \
+		BASE=http://localhost:8080 ./e2e/e2e-test.sh'
+
+#e2e-browser: @ Run Playwright browser e2e against deployed SPA (after make e2e setup)
+e2e-browser: kind-create kind-deploy deps-playwright
+	@kubectl -n $(K8S_NAMESPACE) wait --for=condition=available --timeout=180s deployment/$(APP_NAME)
+	@bash -c 'set -e; \
+		kubectl -n $(K8S_NAMESPACE) port-forward svc/$(APP_NAME) 8080:8080 >/tmp/web3-pf.log 2>&1 & \
+		PF_PID=$$!; \
+		trap "kill $$PF_PID 2>/dev/null || true" EXIT INT TERM; \
+		for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do \
+			curl -sf http://localhost:8080/internal/isalive >/dev/null 2>&1 && break; \
+			sleep 1; \
+		done; \
+		E2E_BASE_URL=http://localhost:8080 pnpm exec playwright test -c e2e/playwright.config.ts'
+
 #run: @ Start dev server on port 8080
 run: install
 	@pnpm dev
@@ -158,16 +198,17 @@ image-run: image-stop
 image-stop:
 	@docker stop web3 || true
 
-#ci: @ Run full CI pipeline (install + static-check + test + build)
-ci: install static-check test build
+#ci: @ Run full CI pipeline (install + static-check + test + integration-test + build)
+ci: install static-check test integration-test build
 
-#ci-run: @ Run GitHub workflow locally using act (random port, ephemeral artifact dir)
+#ci-run: @ Run GitHub workflow locally using act (random port, ephemeral artifact dir, e2e skipped via vars.ACT)
 ci-run: deps-act
 	@docker container prune -f 2>/dev/null || true
 	@PORT=$$(shuf -i 40000-59999 -n 1); \
 	ARTIFACT_DIR=$$(mktemp -d -t act-artifacts.XXXXXX); \
 	echo "Using act port=$$PORT artifacts=$$ARTIFACT_DIR"; \
 	act push --container-architecture linux/amd64 \
+		--var ACT=true \
 		--artifact-server-port $$PORT \
 		--artifact-server-path $$ARTIFACT_DIR
 
@@ -193,8 +234,17 @@ endif
 	@git tag --delete $(TAG)
 	@echo "Deleted tag $(TAG)"
 
-#kind-deploy: @ Deploy to a local KinD cluster
-kind-deploy: deps-k8s image-build
+#kind-create: @ Create a local KinD cluster (idempotent — no-op if cluster exists)
+kind-create: deps-k8s
+	@kind get clusters 2>/dev/null | grep -q "^$(KIND_CLUSTER_NAME)$$" || \
+		kind create cluster --name $(KIND_CLUSTER_NAME) --image kindest/node:$(KIND_NODE_IMAGE)
+
+#kind-destroy: @ Delete the local KinD cluster
+kind-destroy: deps-k8s
+	@kind delete cluster --name $(KIND_CLUSTER_NAME) 2>/dev/null || true
+
+#kind-deploy: @ Deploy production image to a local KinD cluster
+kind-deploy: deps-k8s image-build-prod
 	@kind load docker-image $(APP_NAME):$(CURRENTTAG) -n kind && \
 	kubectl apply -f ./k8s/ns.yaml && \
 	kubectl apply -f ./k8s/cm.yaml --namespace=web3 && \
@@ -207,9 +257,10 @@ kind-undeploy: deps-k8s
 	kubectl delete -f ./k8s/cm.yaml --namespace=web3 --ignore-not-found=true && \
 	kubectl delete -f ./k8s/ns.yaml --ignore-not-found=true
 
-#kind-redeploy: @ Redeploy to a local KinD cluster
-kind-redeploy: deps-k8s image-build
-	@kubectl delete -f ./k8s/deployment.yaml --namespace=web3 --ignore-not-found=true && \
+#kind-redeploy: @ Redeploy production image to a local KinD cluster
+kind-redeploy: deps-k8s image-build-prod
+	@kind load docker-image $(APP_NAME):$(CURRENTTAG) -n kind && \
+	kubectl delete -f ./k8s/deployment.yaml --namespace=web3 --ignore-not-found=true && \
 	kubectl apply -f ./k8s/cm.yaml --namespace=web3 && \
 	yq eval '.spec.template.spec.containers[0].image = "$(APP_NAME):$(CURRENTTAG)"' ./k8s/deployment.yaml | kubectl apply --namespace=web3 -f -
 
@@ -255,9 +306,9 @@ cleanup-images:
 		gh api --method DELETE "/users/$$OWNER/packages/container/$$PACKAGE/versions/$$version_id" || true; \
 	done
 
-.PHONY: help deps deps-act deps-hadolint deps-k8s deps-trivy deps-secrets clean install build lint vulncheck \
+.PHONY: help deps deps-act deps-hadolint deps-k8s deps-trivy deps-secrets deps-playwright clean install build lint vulncheck \
 	trivy-fs trivy-config secrets mermaid-lint static-check format check upgrade \
-	test test-watch test-coverage run \
+	test test-watch test-coverage integration-test e2e e2e-browser run \
 	image-build image-build-prod image-run image-stop ci ci-run release tag-delete \
-	kind-deploy kind-undeploy kind-redeploy deps-prune deps-prune-check renovate-validate \
+	kind-create kind-destroy kind-deploy kind-undeploy kind-redeploy deps-prune deps-prune-check renovate-validate \
 	cleanup-runs cleanup-images
