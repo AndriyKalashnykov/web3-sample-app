@@ -1,65 +1,98 @@
-import { ethers } from 'ethers'
+import {
+  createPublicClient,
+  http,
+  formatEther as viemFormatEther,
+  formatUnits as viemFormatUnits,
+  getAddress,
+  parseAbi,
+  type Address,
+  type PublicClient,
+} from 'viem'
+import { mainnet } from 'viem/chains'
 
-export let provider: ethers.JsonRpcProvider
-export let ETHbalance: bigint
-export let ETHblock: number
+// DAI ERC-20 mainnet contract — hardcoded canonical address (was previously
+// resolved via ENS `dai.tokens.ethers.eth`; pinning the address eliminates
+// an unnecessary RPC roundtrip and the ENS dependency).
+const DAI_ADDRESS: Address = '0x6B175474E89094C44Da98b954EedeAC495271d0F'
 
-export let DAIContractName: string
-export let DAISymbol: string
-export let DAIBalance: bigint
-export let DAIBalanceFormatted: string
-export let DAIblock: number
+const DAI_ABI = parseAbi([
+  'function name() view returns (string)',
+  'function symbol() view returns (string)',
+  'function balanceOf(address) view returns (uint256)',
+])
 
-export async function getProvider() {
-  provider = new ethers.JsonRpcProvider(import.meta.env.VITE_RPCENDPOINT)
-  await provider.ready
+export type ETHResult = { block: bigint; balance: bigint }
+export type DAIResult = {
+  block: bigint
+  name: string
+  symbol: string
+  balance: bigint
+  balanceFormatted: string
 }
 
-export async function getETHBalance(account: string) {
-  try {
-    ETHblock = 0
-    ETHbalance = 0n
-    getProvider()
+let cachedClient: PublicClient | undefined
 
-    return Promise.all([
-      (ETHblock = await provider.getBlockNumber()),
-      (ETHbalance = await provider.getBalance(account)),
-    ]).catch((error) => {
-      console.log(error)
-      return [null, null, null]
-    })
-  } catch (error) {
-    console.log(error)
+function getClient(): PublicClient {
+  if (cachedClient) return cachedClient
+  const url = import.meta.env.VITE_RPCENDPOINT
+  if (!url) throw new Error('VITE_RPCENDPOINT is not configured')
+  cachedClient = createPublicClient({
+    chain: mainnet,
+    transport: http(url),
+  })
+  return cachedClient
+}
+
+// Reset the cached client — used by tests that mutate VITE_RPCENDPOINT
+// across cases (the viem PublicClient holds onto the transport URL).
+export function resetClient(): void {
+  cachedClient = undefined
+}
+
+export async function getETHBalance(account: string): Promise<ETHResult> {
+  const client = getClient()
+  const address = getAddress(account)
+  const [block, balance] = await Promise.all([
+    client.getBlockNumber(),
+    client.getBalance({ address }),
+  ])
+  return { block, balance }
+}
+
+export async function getDAIBalance(account: string): Promise<DAIResult> {
+  const client = getClient()
+  const address = getAddress(account)
+  const [block, name, symbol, balance] = await Promise.all([
+    client.getBlockNumber(),
+    client.readContract({
+      address: DAI_ADDRESS,
+      abi: DAI_ABI,
+      functionName: 'name',
+    }),
+    client.readContract({
+      address: DAI_ADDRESS,
+      abi: DAI_ABI,
+      functionName: 'symbol',
+    }),
+    client.readContract({
+      address: DAI_ADDRESS,
+      abi: DAI_ABI,
+      functionName: 'balanceOf',
+      args: [address],
+    }),
+  ])
+  return {
+    block,
+    name,
+    symbol,
+    balance,
+    balanceFormatted: viemFormatUnits(balance, 18),
   }
 }
 
-export async function getDAIBalance(address: string) {
-  try {
-    DAIblock = 0
-    DAIBalance = 0n
-    getProvider()
-
-    const daiAddress = 'dai.tokens.ethers.eth'
-    const daiAbi = [
-      'function name() view returns (string)',
-      'function symbol() view returns (string)',
-      'function balanceOf(address) view returns (uint)',
-      'function transfer(address to, uint amount)',
-      'event Transfer(address indexed from, address indexed to, uint amount)',
-    ]
-    const daiContract = new ethers.Contract(daiAddress, daiAbi, provider)
-
-    return Promise.all([
-      (DAIblock = await provider.getBlockNumber()),
-      (DAIContractName = await daiContract.name()),
-      (DAISymbol = await daiContract.symbol()),
-      (DAIBalance = await daiContract.balanceOf(address)),
-      (DAIBalanceFormatted = ethers.formatUnits(DAIBalance, 18)),
-    ]).catch((error) => {
-      console.log(error)
-      return [null, null, null]
-    })
-  } catch (error) {
-    console.log(error)
-  }
-}
+// Re-export viem helpers callers use directly (e.g. AccountForm formats
+// the displayed wei balance with formatEther). Keeps viem out of the
+// component layer.
+export const formatEther = viemFormatEther
+export const formatUnits = viemFormatUnits
+export { getAddress }

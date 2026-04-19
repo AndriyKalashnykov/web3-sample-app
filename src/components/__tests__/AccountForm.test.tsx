@@ -7,54 +7,31 @@ import {
 } from '@/test/test-utils'
 import AccountForm from '@/components/AccountForm'
 
-const mockGetBlockNumber = vi.fn().mockResolvedValue(12345)
-const mockProvider = {
-  ready: Promise.resolve(),
-  getBlockNumber: mockGetBlockNumber,
-  getBalance: vi.fn().mockResolvedValue(0n),
-}
+const TEST_ADDRESS = '0xeB2629a2734e272Bcc07BDA959863f316F4bD4Cf'
 
 vi.mock('@/service/ether', () => ({
-  provider: null,
-  ETHbalance: 0,
-  ETHblock: 0,
-  DAIBalance: 0,
-  DAIblock: 0,
-  DAIContractName: '',
-  DAISymbol: '',
-  DAIBalanceFormatted: '0',
-  getProvider: vi.fn(),
-  getETHBalance: vi.fn().mockResolvedValue([12345, 0n]),
-  getDAIBalance: vi.fn().mockResolvedValue([12345, 'Dai', 'DAI', 0n, '0.0']),
-}))
-
-vi.mock('ethers', () => ({
-  ethers: {
-    isAddress: vi.fn(() => false),
-    formatEther: vi.fn((val) => {
-      if (typeof val === 'bigint') return (Number(val) / 1e18).toString()
-      return '0.0'
-    }),
-  },
+  getETHBalance: vi.fn().mockResolvedValue({ block: 12345n, balance: 0n }),
+  getDAIBalance: vi.fn().mockResolvedValue({
+    block: 12345n,
+    name: 'Dai Stablecoin',
+    symbol: 'DAI',
+    balance: 0n,
+    balanceFormatted: '0.0',
+  }),
+  formatEther: vi.fn((val: bigint) => (Number(val) / 1e18).toString()),
+  formatUnits: vi.fn((val: bigint) => (Number(val) / 1e18).toString()),
+  getAddress: vi.fn((value: string) => {
+    if (!value || !value.startsWith('0x')) {
+      throw new Error(`Address "${value}" is invalid.`)
+    }
+    return value
+  }),
 }))
 
 describe('AccountForm component', () => {
-  beforeEach(async () => {
+  beforeEach(() => {
     vi.clearAllMocks()
     vi.spyOn(window, 'alert').mockImplementation(() => {})
-
-    const etherMod = await import('@/service/ether')
-    Object.defineProperty(etherMod, 'provider', {
-      value: mockProvider,
-      writable: true,
-    })
-    vi.mocked(etherMod.getProvider).mockImplementation(async () => {
-      Object.defineProperty(etherMod, 'provider', {
-        value: mockProvider,
-        writable: true,
-      })
-    })
-    mockGetBlockNumber.mockResolvedValue(12345)
   })
 
   it('renders the address input with placeholder', () => {
@@ -91,8 +68,11 @@ describe('AccountForm component', () => {
     expect(input).toHaveValue('0xabc')
   })
 
-  it('shows alert when provider fails', async () => {
-    mockGetBlockNumber.mockRejectedValue(new Error('network error'))
+  it('shows alert when getETHBalance throws', async () => {
+    const etherMod = await import('@/service/ether')
+    vi.mocked(etherMod.getETHBalance).mockRejectedValueOnce(
+      new Error('network error'),
+    )
     renderWithProviders(<AccountForm />)
 
     await waitFor(() => {
@@ -112,32 +92,20 @@ describe('AccountForm component', () => {
     })
   })
 
-  it('displays balance for address 0xeB2629a2734e272Bcc07BDA959863f316F4bD4Cf', async () => {
+  it('displays balance for a valid address', async () => {
     const etherMod = await import('@/service/ether')
-    const { ethers } = await import('ethers')
     const balanceWei = 1500000000000000000n // 1.5 ETH
-
-    vi.mocked(ethers.isAddress).mockReturnValue(true)
-    vi.mocked(ethers.formatEther).mockReturnValue('1.5')
-    vi.mocked(etherMod.getETHBalance).mockImplementation(async () => {
-      Object.defineProperty(etherMod, 'ETHbalance', {
-        value: balanceWei,
-        writable: true,
-        configurable: true,
-      })
-      Object.defineProperty(etherMod, 'ETHblock', {
-        value: 20000000,
-        writable: true,
-        configurable: true,
-      })
-      return [20000000, balanceWei]
+    vi.mocked(etherMod.getETHBalance).mockResolvedValue({
+      block: 20000000n,
+      balance: balanceWei,
     })
+    vi.mocked(etherMod.formatEther).mockReturnValue('1.5')
 
     renderWithProviders(<AccountForm />)
     const user = userEvent.setup()
 
     const input = screen.getByPlaceholderText('Address')
-    await user.type(input, '0xeB2629a2734e272Bcc07BDA959863f316F4bD4Cf')
+    await user.type(input, TEST_ADDRESS)
     await user.click(screen.getByText('Get Balance'))
 
     await waitFor(() => {
