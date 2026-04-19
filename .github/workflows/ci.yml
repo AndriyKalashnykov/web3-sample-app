@@ -41,8 +41,9 @@ permissions:
 
 env:
   # Duplicated from Makefile ZAP_VERSION (no shared source between Makefile +
-  # workflow). Renovate tracks the Makefile constant via the inline
-  # `# renovate:` comment; bump both together.
+  # workflow). The annotation below lets Renovate's workflow-yaml customManager
+  # bump this in the same PR as the Makefile constant — no drift.
+  # renovate: datasource=github-releases depName=zaproxy/zaproxy extractVersion=^v(?<version>.*)$
   ZAP_VERSION: 2.17.0
 
 jobs:

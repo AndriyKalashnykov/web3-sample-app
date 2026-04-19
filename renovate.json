@@ -54,6 +54,14 @@
       "matchStrings": [
         "# renovate: datasource=(?<datasource>[^\\s]+) depName=(?<depName>[^\\s]+)( extractVersion=(?<extractVersion>[^\\s]+))?( versioning=(?<versioning>[^\\s]+))?\\n[\"a-zA-Z0-9_:/-]+\\s*=\\s*\"(?<currentValue>[^\"]+)\""
       ]
+    },
+    {
+      "customType": "regex",
+      "description": "Update workflow env vars (e.g. ZAP_VERSION) via inline renovate comments — keeps the workflow literal in sync with the Makefile constant it duplicates",
+      "managerFilePatterns": ["/^\\.github/workflows/.+\\.ya?ml$/"],
+      "matchStrings": [
+        "# renovate: datasource=(?<datasource>[^\\s]+) depName=(?<depName>[^\\s]+)( extractVersion=(?<extractVersion>[^\\s]+))?( versioning=(?<versioning>[^\\s]+))?\\n\\s*[A-Z_][A-Z0-9_]*:\\s*[\"']?(?<currentValue>[^\"'\\n]+)[\"']?"
+      ]
     }
   ],
   "packageRules": [
