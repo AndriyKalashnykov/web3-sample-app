@@ -1,5 +1,5 @@
 // AccountForm.tsx
-import React, { useEffect, useState } from 'react'
+import React, { useState } from 'react'
 import { t } from 'i18next'
 import {
   formatEther,
@@ -7,8 +7,9 @@ import {
   getDAIBalance,
   getETHBalance,
 } from '@/service/ether'
+import { config } from '@/config'
 
-const RPCENDPOINT = import.meta.env.VITE_RPCENDPOINT ?? 'not configured'
+const RPCENDPOINT = config.VITE_RPCENDPOINT || 'not configured'
 const ERRMSG = 'Could not retrieve info from blockchain using\n'
 
 function isValidAddress(value: string): boolean {
@@ -27,15 +28,9 @@ const AccountForm = () => {
   const [asset, setAsset] = useState('ETH')
   const [disable, setDisable] = useState(false)
 
-  useEffect(() => {
-    void getBalance()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
   const getBalance = async (_event?: unknown) => {
-    if (isValidAddress(destinationAddress)) {
-      setDisable(true)
-    }
+    if (!isValidAddress(destinationAddress)) return
+    setDisable(true)
     setBalance(0n)
     setBlock(0)
     const assetCbValue: string = (

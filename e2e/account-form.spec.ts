@@ -27,12 +27,14 @@ test.describe('Web3 Sample App — AccountForm', () => {
     await page.locator('#GetBalanceButton').click()
 
     // Block counter must update from 0 to a real block height (>0). 30s budget
-    // covers cold RPC latency without masking a real failure.
+    // covers cold RPC latency without masking a real failure. Translation key
+    // `block` renders as "Last Block: <n>" (see src/locales/en.json) — match
+    // by the unique label suffix, not a `^block` anchor.
     await expect
       .poll(
         async () => {
-          const text = await page.getByText(/^block:/i).innerText()
-          const match = text.match(/(\d+)/)
+          const text = await page.getByText(/Last Block:/).innerText()
+          const match = text.match(/Last Block:\s*(\d+)/)
           return match ? Number(match[1]) : 0
         },
         { timeout: 30_000, intervals: [500, 1000, 2000] },

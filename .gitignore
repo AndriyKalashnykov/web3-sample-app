@@ -33,3 +33,5 @@ test-results/
 
 # Local CI / act
 zap-output/
+# Claude Code scheduled-task lock
+.claude/

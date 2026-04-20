@@ -33,7 +33,7 @@ spec:
       # can rewrite the bundled JS at startup.
       initContainers:
         - name: seed-html
-          image: ghcr.io/andriykalashnykov/web3-sample-app:v0.0.14
+          image: ghcr.io/andriykalashnykov/web3-sample-app:v0.0.18
           imagePullPolicy: IfNotPresent
           command:
             - sh
@@ -58,7 +58,7 @@ spec:
       containers:
         - name: web3-sample-app
           # Renovate-tracked via dockerfile manager (image:tag in this YAML).
-          image: ghcr.io/andriykalashnykov/web3-sample-app:v0.0.14
+          image: ghcr.io/andriykalashnykov/web3-sample-app:v0.0.18
           imagePullPolicy: IfNotPresent
           envFrom:
             - configMapRef:
