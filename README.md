@@ -70,9 +70,9 @@ The SPA is a single React app served from a static nginx image. All blockchain c
 3. The Ethereum service (`src/service/ether/ether.ts`) constructs a viem `PublicClient` against `VITE_RPCENDPOINT` (mainnet, `http` transport) and exposes `getETHBalance(address)` → `{block, balance}` and `getDAIBalance(address)` → `{block, name, symbol, balance, balanceFormatted}`. The DAI ERC-20 contract is hardcoded to its canonical mainnet address `0x6B17…1d0F` (no ENS lookup).
 4. State lives in `src/store/` — Redux Toolkit slices (`counterSlice`, `commonSlice`) accessed through typed hooks (`useAppDispatch`, `useAppSelector`).
 
-### Runtime env-var injection
+### Runtime env-var injection (Pattern C)
 
-`Dockerfile.prod` builds with placeholder env values, then `start-nginx.sh` runs `envsubst` against the served JS bundles at container startup so `VITE_RPCENDPOINT` can be set per-environment without rebuilding the image. The K8s `ConfigMap` in `k8s/cm.yaml` provides this value in cluster.
+`Dockerfile.prod` is environment-agnostic — Vite emits `index.html` containing an inline `<script>` block that sets `window.__CONFIG__ = { VITE_RPCENDPOINT: "${VITE_RPCENDPOINT}", VITE_BASE_URL: "${VITE_BASE_URL}" }`. The build renames it to `index.html.template`. At container startup, `start-nginx.sh` runs `envsubst` against that single template (restricted variable list — only `$VITE_RPCENDPOINT` and `$VITE_BASE_URL` are substituted) and writes the result to `index.html`. The SPA reads `window.__CONFIG__` via `src/config.ts`, which falls through to `import.meta.env` when the placeholders are still literal (i.e. `pnpm dev`). The K8s `ConfigMap` in `k8s/cm.yaml` provides the runtime values in cluster — see [`src/config.ts`](src/config.ts), [`index.html`](index.html), and [`start-nginx.sh`](start-nginx.sh).
 
 ### Path alias
 
@@ -127,7 +127,7 @@ C4Deployment
     Deployment_Node(cluster, "KinD cluster", "kindest/node v1.35.1") {
       Deployment_Node(ns, "Namespace: web3") {
         Deployment_Node(pod, "Pod (Deployment, replicas=1)") {
-          Container(init, "seed-html (init)", "Copies baked HTML to writable emptyDir")
+          Container(init, "seed-html (init)", "Copies image's html dir (assets + index.html.template) to writable emptyDir")
           Container(nginx, "web3-sample-app", "nginx-unprivileged 1.29.8 on :8080")
         }
         ContainerDb(cm, "ConfigMap", "web3-sample-app-config — VITE_RPCENDPOINT, VITE_BASE_URL, PORT")
@@ -142,10 +142,10 @@ C4Deployment
   Rel(envoy, svc, "Routes to")
   Rel(svc, nginx, "Routes to")
   Rel(nginx, cm, "Reads env from", "envFrom")
-  Rel(nginx, rpc, "JSON-RPC", "via baked + envsubst'd URL")
+  Rel(nginx, rpc, "JSON-RPC", "URL from window.__CONFIG__ (envsubst'd index.html)")
 ```
 
-The `seed-html` init container copies the baked SPA bundle from the read-only image filesystem into a writable `emptyDir` mounted at `/usr/share/nginx/html`. The main container's `start-nginx.sh` then runs `envsubst` against the bundled JS (replacing the literal `$VITE_RPCENDPOINT` placeholder Vite baked at build time with the value from the ConfigMap) before nginx starts. This is what makes "build once, configure at deploy time" work despite `readOnlyRootFilesystem: true` on the main container.
+The `seed-html` init container copies the baked SPA bundle (`assets/` plus `index.html.template`) from the read-only image filesystem into a writable `emptyDir` mounted at `/usr/share/nginx/html`. The main container's `start-nginx.sh` then runs `envsubst` against `index.html.template` only (variables restricted to `$VITE_RPCENDPOINT $VITE_BASE_URL`) and writes the result to `index.html`. The SPA reads the substituted values via `window.__CONFIG__` at boot. The `assets/` JS bundles are byte-identical across environments, so consumers can verify by digest and Trivy/Cosign signatures stay consistent. This is what makes "build once, configure at deploy time" work despite `readOnlyRootFilesystem: true` on the main container — and the initContainer image MUST stay in lockstep with the main container image (both are patched to the same tag by `kind-deploy` via `KIND_IMAGE_PATCH`).
 
 ## Testing
 
@@ -155,7 +155,7 @@ Four test layers, each with its own Makefile target, config, and CI job:
 |-------|--------|-------|---------------|----------------|
 | Unit + Component | `make test` | `src/store/models/__tests__/`, `src/service/ether/__tests__/ether.test.ts`, `src/components/__tests__/` | jsdom (vitest, in-process) | Pure functions, Redux slices, mocked ether service, components rendered via `renderWithProviders` |
 | Integration | `make integration-test` | `src/service/ether/__tests__/ether.integration.test.ts` | node (vitest, real network) | Ether service against the real `VITE_RPCENDPOINT` (block fetch, ETH/DAI balance, malformed-input negatives) |
-| E2E — HTTP | `make e2e` | `e2e/e2e-test.sh` | KinD + cloud-provider-kind LoadBalancer | nginx routes (`/internal/isalive`, `/internal/isready`, `/publicnode` → 307, SPA fallback, missing asset 404) + verifies `start-nginx.sh` substituted `VITE_RPCENDPOINT` into served JS |
+| E2E — HTTP | `make e2e` | `e2e/e2e-test.sh` | KinD + cloud-provider-kind LoadBalancer | nginx routes (`/internal/isalive`, `/internal/isready`, `/publicnode` → 307, SPA fallback, missing asset 404) + verifies `start-nginx.sh` substituted `VITE_RPCENDPOINT` into the inline `window.__CONFIG__` in served `index.html` |
 | E2E — Browser | `make e2e-browser` | `e2e/playwright.config.ts`, `e2e/account-form.spec.ts` | KinD + cloud-provider-kind + Playwright Chromium | AccountForm renders + real RPC roundtrip updates the displayed block number |
 
 ```bash
@@ -230,7 +230,7 @@ xdg-open "http://${service_ip}:8080"
 kubectl delete -f ./k8s --namespace=web3
 ```
 
-The K8s ConfigMap (`k8s/cm.yaml`) provides `VITE_RPCENDPOINT` to the running pod; `start-nginx.sh` substitutes it into the served JS at startup.
+The K8s ConfigMap (`k8s/cm.yaml`) provides `VITE_RPCENDPOINT` to the running pod; `start-nginx.sh` substitutes it into the inline `window.__CONFIG__` script in `/index.html` at startup (Pattern C — see [Runtime env-var injection](#runtime-env-var-injection-pattern-c)).
 
 ## Available Make Targets
 

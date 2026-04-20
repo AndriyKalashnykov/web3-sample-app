@@ -9,6 +9,19 @@
     <title>web3-sample-app</title>
   </head>
   <body>
+    <!--
+      Runtime configuration injection (Pattern C). The placeholders below
+      are substituted by `start-nginx.sh`'s envsubst pass at container start
+      with values from the container env (k8s ConfigMap / docker -e). In
+      `pnpm dev`, the placeholders pass through untouched and src/config.ts
+      detects them and falls through to import.meta.env from `.env`.
+    -->
+    <script>
+      window.__CONFIG__ = {
+        VITE_RPCENDPOINT: "${VITE_RPCENDPOINT}",
+        VITE_BASE_URL: "${VITE_BASE_URL}"
+      };
+    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

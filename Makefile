@@ -163,7 +163,7 @@ deps-playwright: install
 
 #e2e: @ Deploy to KinD (LoadBalancer via cloud-provider-kind) and run curl-based e2e suite
 e2e: kind-create kind-deploy
-	@$(KUBECTL_NS) wait --for=condition=available --timeout=180s deployment/$(APP_NAME)
+	@$(KUBECTL_NS) rollout status deployment/$(APP_NAME) --timeout=180s
 	@bash -c 'set -e; \
 		echo "Waiting for LoadBalancer IP..."; \
 		for i in $$(seq 1 60); do \
@@ -181,7 +181,7 @@ e2e: kind-create kind-deploy
 
 #e2e-browser: @ Run Playwright browser e2e against deployed SPA via LoadBalancer IP
 e2e-browser: kind-create kind-deploy deps-playwright
-	@$(KUBECTL_NS) wait --for=condition=available --timeout=180s deployment/$(APP_NAME)
+	@$(KUBECTL_NS) rollout status deployment/$(APP_NAME) --timeout=180s
 	@bash -c 'set -e; \
 		for i in $$(seq 1 60); do \
 			LB_IP=$$($(KUBECTL_NS) get svc $(APP_NAME) -o jsonpath="{.status.loadBalancer.ingress[0].ip}"); \

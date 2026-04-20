@@ -52,40 +52,34 @@ assert_redirect_target() {
   fi
 }
 
-assert_any_chunk_contains() {
-  # SPA chunk-splits via Vite + Rolldown. The VITE_RPCENDPOINT value lands in
-  # whichever chunk imports the ether service — index-*.js by default, but
-  # could move under refactor. Crawl primary scripts referenced from index.html
-  # AND any lazy chunks they import via `"./assets/..."` strings.
+assert_runtime_config_substituted() {
+  # Pattern C: start-nginx.sh runs envsubst on index.html.template at container
+  # start, producing /index.html with `window.__CONFIG__.VITE_RPCENDPOINT` set
+  # to the real RPC URL from container env. Verify both that the inline script
+  # is present AND that the placeholder was replaced (no literal `${VAR}`).
   local pattern="$1"
-  local primary_assets lazy_chunks asset_urls
-  primary_assets=$(curl -sf "$BASE/" | grep -oE '/assets/[^"'\'']+\.js' | sort -u || true)
-  # Rolldown emits lazy-chunk references as bare basenames (NOT quoted, NOT
-  # as `./assets/...` paths). Match the well-known chunk prefixes. CSS and
-  # non-existent siblings get filtered later by the curl probe (404s skipped).
-  lazy_chunks=$(for a in $primary_assets; do
-    curl -sf "${BASE}${a}" \
-      | grep -oE '\b(index|about|vendor-[a-z]+|i18next|rolldown-runtime)-[A-Za-z0-9_-]{8}\b' \
-      | awk '{print "/assets/" $0 ".js"}' || true
-  done | sort -u || true)
-  asset_urls=$(printf '%s\n%s\n' "$primary_assets" "$lazy_chunks" | sort -u | sed '/^$/d')
-  if [[ -z "$asset_urls" ]]; then
-    echo "FAIL: no /assets/*.js URLs found in served HTML"
+  local body
+  body=$(curl -sf "$BASE/" || true)
+  if ! echo "$body" | grep -q 'window.__CONFIG__'; then
+    echo "FAIL: served index.html missing window.__CONFIG__ inline script"
     FAIL=$((FAIL + 1))
     return
   fi
-  for asset in $asset_urls; do
-    if curl -sf "${BASE}${asset}" | grep -q "$pattern"; then
-      echo "PASS: ${BASE}${asset} contains '$pattern' (Vite baked VITE_RPCENDPOINT into bundle)"
-      PASS=$((PASS + 1))
-      return
-    fi
-  done
-  echo "FAIL: '$pattern' not found in any served chunk: $(echo "$asset_urls" | tr '\n' ' ')"
-  FAIL=$((FAIL + 1))
+  if echo "$body" | grep -q '\${VITE_RPCENDPOINT}'; then
+    echo "FAIL: envsubst did not replace \${VITE_RPCENDPOINT} placeholder"
+    FAIL=$((FAIL + 1))
+    return
+  fi
+  if echo "$body" | grep -q "VITE_RPCENDPOINT: \"$pattern\""; then
+    echo "PASS: window.__CONFIG__.VITE_RPCENDPOINT substituted with '$pattern'"
+    PASS=$((PASS + 1))
+  else
+    echo "FAIL: window.__CONFIG__.VITE_RPCENDPOINT does not contain '$pattern'"
+    FAIL=$((FAIL + 1))
+  fi
 }
 
-echo "=== E2E suite against $BASE (expecting RPC=$EXPECTED_RPC injected into JS) ==="
+echo "=== E2E suite against $BASE (expecting RPC=$EXPECTED_RPC injected into index.html) ==="
 
 # Health probes (nginx custom routes)
 assert_status GET "$BASE/internal/isalive" 200
@@ -108,9 +102,10 @@ assert_status GET "$BASE/assets/does-not-exist.js" 404
 # Public RPC redirect (nginx /publicnode -> 307 to public RPC)
 assert_redirect_target "$BASE/publicnode" 307 "ethereum-rpc.publicnode.com"
 
-# Bundle env coverage — VITE_RPCENDPOINT must appear in some served chunk
-# (Vite bakes it at build time; if it's missing, the SPA cannot reach the RPC).
-assert_any_chunk_contains "$EXPECTED_RPC"
+# Pattern C runtime config — VITE_RPCENDPOINT must be substituted into the
+# inline window.__CONFIG__ script in /index.html by start-nginx.sh's envsubst
+# pass. If the placeholder is still literal, container startup is broken.
+assert_runtime_config_substituted "$EXPECTED_RPC"
 
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="

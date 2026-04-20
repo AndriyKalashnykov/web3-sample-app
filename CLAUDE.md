@@ -50,7 +50,7 @@ Four-layer test pyramid. Each layer has its own Makefile target, vitest/Playwrig
 |-------|--------|--------|-------|-------|----------------|
 | Unit + Component | `make test` | `vitest.config.ts` (excludes `**/*.integration.test.*`) | `src/store/models/__tests__/`, `src/service/ether/__tests__/ether.test.ts`, `src/components/__tests__/` | ~1s | Pure functions, Redux slices, mocked ether service, components rendered via `renderWithProviders` |
 | Integration | `make integration-test` | `vitest.integration.config.ts` (`include: ['**/*.integration.test.ts']`, 30s timeout, node env) | `src/service/ether/__tests__/ether.integration.test.ts` | ~5s | Ether service against the real `VITE_RPCENDPOINT` (block fetch, ETH/DAI balance, malformed-input negative paths) |
-| E2E (curl) | `make e2e` | `e2e/e2e-test.sh` | KinD + cloud-provider-kind LoadBalancer (kind Docker network IP) | ~30s | nginx routes (`/internal/isalive`, `/internal/isready`, `/publicnode` → 307, SPA fallback, missing asset 404) + verifies `start-nginx.sh` substituted `VITE_RPCENDPOINT` into served JS |
+| E2E (curl) | `make e2e` | `e2e/e2e-test.sh` | KinD + cloud-provider-kind LoadBalancer (kind Docker network IP) | ~30s | nginx routes (`/internal/isalive`, `/internal/isready`, `/publicnode` → 307, SPA fallback, missing asset 404) + verifies `start-nginx.sh` substituted `VITE_RPCENDPOINT` into the inline `window.__CONFIG__` block in `/index.html` |
 | E2E (browser) | `make e2e-browser` | `e2e/playwright.config.ts` + `e2e/account-form.spec.ts` | KinD + cloud-provider-kind + Playwright Chromium | ~45s | AccountForm renders, real RPC roundtrip updates the displayed block number |
 
 Notes:
@@ -73,13 +73,14 @@ This is a React SPA that queries Ethereum blockchain balances (ETH and DAI) via 
 
 - **Pages** (`src/pages/`): Route-level components (`index/` = home, `about/`)
 - **Components** (`src/components/`): `AccountForm` (blockchain query UI), `Counter` (Redux demo), `Layout` (Header/Footer with MUI drawer nav), `Logo`
-- **Ethereum service** (`src/service/ether/ether.ts`): Uses viem's `createPublicClient` (mainnet, http transport) to query ETH balances and DAI token contract reads. Exposes `getETHBalance(addr)` and `getDAIBalance(addr)` returning typed result objects (`{block, balance}` / `{block, name, symbol, balance, balanceFormatted}`). RPC endpoint comes from `VITE_RPCENDPOINT` env var. DAI contract address hardcoded to canonical mainnet `0x6B17…1d0F` (no ENS lookup). Re-exports `formatEther`, `formatUnits`, `getAddress` so the component layer doesn't import viem directly.
+- **Ethereum service** (`src/service/ether/ether.ts`): Uses viem's `createPublicClient` (mainnet, http transport) to query ETH balances and DAI token contract reads. Exposes `getETHBalance(addr)` and `getDAIBalance(addr)` returning typed result objects (`{block, balance}` / `{block, name, symbol, balance, balanceFormatted}`). RPC endpoint comes from `config.VITE_RPCENDPOINT` (resolved at module load via `src/config.ts` — see "Runtime env-var injection" below). DAI contract address hardcoded to canonical mainnet `0x6B17…1d0F` (no ENS lookup). Re-exports `formatEther`, `formatUnits`, `getAddress` so the component layer doesn't import viem directly.
+- **Runtime config** (`src/config.ts`): Single source of truth for env-derived runtime values. Reads `window.__CONFIG__` first (populated by `start-nginx.sh`'s envsubst pass on `index.html.template` in production), falls through to `import.meta.env` when the placeholder is still literal (i.e. `pnpm dev` or test). Both `ether.ts` and `AccountForm.tsx` consume the typed `config` object — no other module reads `import.meta.env.VITE_*` directly.
 - **State** (`src/store/`): Redux Toolkit with slices for `counter` (`counterSlice.ts`) and `common` (`commonSlice.ts`). Uses `configureStore`, `createSlice`, and typed hooks (`useAppDispatch`, `useAppSelector`).
 - **i18n** (`src/locale.ts`): i18next with `react-i18next`, static English translations from `src/locales/en.json`
 
-### Runtime env-var injection
+### Runtime env-var injection (Pattern C)
 
-`Dockerfile.prod` builds with placeholder env values; `start-nginx.sh` runs `envsubst` against the served JS bundles at container startup so `VITE_RPCENDPOINT` can be set per-environment without rebuilding the image. The K8s `ConfigMap` in `k8s/cm.yaml` provides this value in cluster.
+`Dockerfile.prod` is environment-agnostic — Vite's build emits `index.html` containing an inline `<script>` block that sets `window.__CONFIG__ = { VITE_RPCENDPOINT: "${VITE_RPCENDPOINT}", VITE_BASE_URL: "${VITE_BASE_URL}" }`. The build renames it to `index.html.template`. At container startup, `start-nginx.sh` runs `envsubst` against that single file (variables restricted to `$VITE_RPCENDPOINT $VITE_BASE_URL` so unrelated container env doesn't accidentally substitute) and writes the result to `/usr/share/nginx/html/index.html`. The SPA reads `window.__CONFIG__` via `src/config.ts`. Bundled JS is byte-identical across deployments — only `index.html` changes per env. K8s `ConfigMap` in `k8s/cm.yaml` provides values in-cluster.
 
 ### Path Alias
 
@@ -91,7 +92,7 @@ Tailwind CSS v4 with `@tailwindcss/postcss`. Custom colors (`primary`, `secondar
 
 ### Build
 
-Vite 8 with oxc minifier (not terser). Console and debugger statements are stripped in production via `build.oxc.compress` in `vite.config.ts`. Vendor chunks are split via `rolldownOptions.output.manualChunks` (function, not object — Rolldown requirement) into `vendor-react`, `vendor-mui`, and `vendor-ethers`.
+Vite 8 with oxc minifier (not terser). Console and debugger statements are stripped in production via `build.oxc.compress` in `vite.config.ts`. Vendor chunks are split via `rolldownOptions.output.manualChunks` (function, not object — Rolldown requirement) into `vendor-react`, `vendor-mui`, and `vendor-viem` (covers `viem`, `@noble/*`, `@scure/*`, `abitype`, `isows`, `ws`).
 
 ## CI/CD
 
@@ -159,13 +160,14 @@ Last reviewed: 2026-04-19 (post `/upgrade-analysis` Wave 1+2+3 applied). Review 
 - [x] ~~**Wave 4: MUI v7 → v9**~~ — done (2026-04-19). MUI skipped v8 entirely; direct jump v7.3.9 → v9.0.0 (released 2026-04-08). Single breaking change in this codebase: `<Menu MenuListProps={{...}}>` → `<Menu slotProps={{ list: {...} }}>` in `Layout.tsx`. v9's headline changes (sx-prop perf, accessibility, deprecated-API cleanup) didn't affect any of our usage. vendor-mui chunk grew slightly (175 KB → 179 KB).
 - [x] ~~**K8s deployment: enable resource requests/limits**~~ — done (2026-04-19), conservative defaults (cpu 10m/200m, mem 32Mi/64Mi) + per-init `5m/100m` and `16Mi/32Mi`.
 - [x] ~~**K8s deployment: add securityContext**~~ — done (2026-04-19), pod-level `runAsNonRoot:true, runAsUser:101, runAsGroup:101, fsGroup:101, seccompProfile:RuntimeDefault`; container-level `readOnlyRootFilesystem:true, allowPrivilegeEscalation:false, capabilities.drop:[ALL]`. Init container `seed-html` copies baked HTML to a writable emptyDir so `start-nginx.sh`'s envsubst can rewrite the bundled JS at startup. `.trivyignore` cleared.
+- [x] ~~**Wave 5: Pattern C runtime config**~~ — done (2026-04-19). Replaced "envsubst against bundled JS" (Pattern B) with "envsubst against `index.html.template` only" (Pattern C). Vite emits an inline `window.__CONFIG__` script in `index.html` containing literal `${VITE_RPCENDPOINT}`/`${VITE_BASE_URL}` placeholders. `Dockerfile.prod` renames it to `index.html.template`; `start-nginx.sh` substitutes only those two vars at container start. The SPA reads via `src/config.ts` (typed wrapper with placeholder detection + `import.meta.env` fallback for dev/test). Bundled JS is byte-identical across deployments — Trivy/cosign hashes stay stable across env, only `index.html` differs. e2e assertion updated to verify `window.__CONFIG__.VITE_RPCENDPOINT` is substituted in the served `index.html`.
 
 ### Open (post-`/upgrade-analysis` deferred items)
 
 - [ ] **`vite.config.ts` hardcodes `server.port: 8080`** — fine for dev (matches container/k8s/nginx), but PORT env var doesn't propagate there. Low priority; `.env.example` documents the coupling.
-- [ ] **e2e lazy-chunk regex (`assert_any_chunk_contains` in `e2e/e2e-test.sh`) is project-specific** — relies on the well-known prefix list `index|about|vendor-…|i18next|rolldown-runtime`. If a refactor introduces a new chunk basename (e.g. via Vite plugin reshuffle), the env-injection assertion silently misses it. Consider a more permissive enumeration (e.g. probe every `/assets/*.js` referenced anywhere transitively) when this becomes a problem.
+- [x] ~~**e2e lazy-chunk regex (`assert_any_chunk_contains`)**~~ — obsolete after Pattern C migration (2026-04-19). The env-injection assertion now reads `window.__CONFIG__` from served `index.html` directly via `assert_runtime_config_substituted` — no JS chunk traversal.
 - [ ] **No SBOM published with the image** — Pattern A intentionally disables `sbom: true` to keep the GHCR "OS / Arch" tab rendering. If a downstream consumer needs an SPDX SBOM (e.g. `cosign download attestation --predicate-type https://spdx.dev/Document`), opt into Pattern B and accept the GHCR UI regression.
-- [ ] **Architecture diagram tech-strings will drift on every framework bump** — README has 3 Mermaid blocks (C4Context, sequenceDiagram, C4Deployment) that name framework versions (`"React 19.2"`, `"TypeScript 6"`, `"Vite 8"`, `"ethers.js 6.16"`, `"nginx-unprivileged 1.29.8 on :8080"`, `"kindest/node v1.35.1"`). Renovate cannot update these strings. Re-run `/architecture-diagrams` after Wave 4 lands (or any later major bump).
+- [ ] **Architecture diagram tech-strings will drift on every framework bump** — README has 3 Mermaid blocks (C4Context, sequenceDiagram, C4Deployment) that name framework versions (`"React 19.2"`, `"TypeScript 6"`, `"Vite 8"`, `"viem 2"`, `"nginx-unprivileged 1.29.8 on :8080"`, `"kindest/node v1.35.1"`). Renovate cannot update these strings. Re-run `/architecture-diagrams` after any future major bump.
 
 ## Skills
 
