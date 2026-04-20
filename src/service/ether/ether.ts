@@ -9,6 +9,7 @@ import {
   type PublicClient,
 } from 'viem'
 import { mainnet } from 'viem/chains'
+import { config } from '@/config'
 
 // DAI ERC-20 mainnet contract — hardcoded canonical address (was previously
 // resolved via ENS `dai.tokens.ethers.eth`; pinning the address eliminates
@@ -34,7 +35,7 @@ let cachedClient: PublicClient | undefined
 
 function getClient(): PublicClient {
   if (cachedClient) return cachedClient
-  const url = import.meta.env.VITE_RPCENDPOINT
+  const url = config.VITE_RPCENDPOINT
   if (!url) throw new Error('VITE_RPCENDPOINT is not configured')
   cachedClient = createPublicClient({
     chain: mainnet,

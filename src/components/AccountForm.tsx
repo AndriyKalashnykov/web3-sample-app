@@ -7,8 +7,9 @@ import {
   getDAIBalance,
   getETHBalance,
 } from '@/service/ether'
+import { config } from '@/config'
 
-const RPCENDPOINT = import.meta.env.VITE_RPCENDPOINT ?? 'not configured'
+const RPCENDPOINT = config.VITE_RPCENDPOINT || 'not configured'
 const ERRMSG = 'Could not retrieve info from blockchain using\n'
 
 function isValidAddress(value: string): boolean {

@@ -8,14 +8,12 @@ COPY package.json pnpm-lock.yaml .npmrc ./
 RUN pnpm install --frozen-lockfile
 COPY . .
 
-# Build-time placeholder values for the SPA's runtime-configurable env vars.
-# Vite bakes these literal `$NAME` strings into the bundle; start-nginx.sh's
-# envsubst replaces them at container startup with the actual runtime values
-# from the env (typically from the k8s ConfigMap). This is the indirection
-# that makes "build once, configure at deploy time" work.
-ENV VITE_RPCENDPOINT='$VITE_RPCENDPOINT' \
-    VITE_BASE_URL='$VITE_BASE_URL'
-RUN pnpm build
+# Pattern C: runtime config is injected by start-nginx.sh's envsubst pass
+# against `index.html.template` (which contains `${VITE_RPCENDPOINT}` etc.
+# inside an inline `window.__CONFIG__` script). No env-var baking required
+# — Vite simply emits index.html as-is with the placeholders. Build is
+# fully environment-agnostic.
+RUN pnpm build && mv dist/index.html dist/index.html.template
 
 # https://hub.docker.com/r/nginxinc/nginx-unprivileged/tags
 FROM nginxinc/nginx-unprivileged:1.29.8-alpine@sha256:30c5bce612513c0fcd49d5a349cb99f7a214d174f7455f7107eeccfd10a68b02 AS server
@@ -23,8 +21,17 @@ FROM nginxinc/nginx-unprivileged:1.29.8-alpine@sha256:30c5bce612513c0fcd49d5a349
 # Patch alpine packages newer than the upstream base image's bake date.
 # Most relevant currently: zlib (CVE-2026-22184, fixed in 1.3.2-r0). The
 # `apk upgrade` requires root; we drop back to UID 101 (nginx) below.
+#
+# Also chown /usr/share/nginx/html — the base image ships it as root:root
+# with a stock index.html. start-nginx.sh's envsubst writes a new index.html
+# at runtime as UID 101, which fails on a root-owned directory. The COPY
+# --chown below only affects copied entries, not the destination directory
+# itself, so we chown explicitly here. Removing the base image's stock
+# index.html in the same step keeps the layer minimal.
 USER root
-RUN apk --no-cache upgrade
+RUN apk --no-cache upgrade \
+ && rm -f /usr/share/nginx/html/index.html \
+ && chown -R nginx:nginx /usr/share/nginx/html
 USER 101
 
 LABEL org.opencontainers.image.title="Web3 Sample App" \

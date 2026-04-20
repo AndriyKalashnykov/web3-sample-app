@@ -1,18 +1,22 @@
 #!/usr/bin/env sh
 #
-# Substitute runtime env vars into the bundled SPA JS, then start nginx.
-# Vite bakes literal `$VITE_*` placeholders into the bundle (per Dockerfile.prod
-# build args); envsubst replaces them at startup with the values from the env
-# (typically supplied by the k8s ConfigMap).
+# Pattern C runtime config injection: substitute env vars into a single
+# file (`index.html`) at container startup, then start nginx. The SPA reads
+# `window.__CONFIG__` (set by the inline script in index.html) — no JS
+# bundle rewriting required.
+#
+# Source template lives at /usr/share/nginx/html/index.html.template
+# (renamed from index.html in Dockerfile.prod). Output is written to
+# /usr/share/nginx/html/index.html on every container start.
 
 set -eu
 
-cp /usr/share/nginx/html/assets/*.js /tmp
-EXISTING_VARS=$(printenv | awk -F= '{print "$"$1}' | paste -sd,)
-export EXISTING_VARS
+TEMPLATE=/usr/share/nginx/html/index.html.template
+OUT=/usr/share/nginx/html/index.html
 
-for file in /tmp/*.js; do
-  envsubst "${EXISTING_VARS}" < "${file}" > "/usr/share/nginx/html/assets/$(basename "${file}")"
-done
+# Restrict envsubst to known SPA config vars so unrelated env entries don't
+# accidentally get substituted into the HTML if they happen to share a name
+# with something in the template.
+envsubst '$VITE_RPCENDPOINT $VITE_BASE_URL' < "$TEMPLATE" > "$OUT"
 
 exec nginx -g 'daemon off;'
