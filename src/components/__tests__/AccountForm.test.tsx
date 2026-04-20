@@ -74,17 +74,33 @@ describe('AccountForm component', () => {
       new Error('network error'),
     )
     renderWithProviders(<AccountForm />)
+    const user = userEvent.setup()
+
+    await user.type(screen.getByPlaceholderText('Address'), TEST_ADDRESS)
+    await user.click(screen.getByText('Get Balance'))
 
     await waitFor(() => {
       expect(window.alert).toHaveBeenCalled()
     })
   })
 
-  it('calls getETHBalance when Get Balance is clicked', async () => {
+  it('does not call getETHBalance when address is empty', async () => {
     const etherMod = await import('@/service/ether')
     renderWithProviders(<AccountForm />)
     const user = userEvent.setup()
 
+    await user.click(screen.getByText('Get Balance'))
+
+    expect(etherMod.getETHBalance).not.toHaveBeenCalled()
+    expect(window.alert).not.toHaveBeenCalled()
+  })
+
+  it('calls getETHBalance when Get Balance is clicked with a valid address', async () => {
+    const etherMod = await import('@/service/ether')
+    renderWithProviders(<AccountForm />)
+    const user = userEvent.setup()
+
+    await user.type(screen.getByPlaceholderText('Address'), TEST_ADDRESS)
     await user.click(screen.getByText('Get Balance'))
 
     await waitFor(() => {

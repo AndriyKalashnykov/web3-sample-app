@@ -53,28 +53,33 @@ assert_redirect_target() {
 }
 
 assert_runtime_config_substituted() {
-  # Pattern C: start-nginx.sh runs envsubst on index.html.template at container
-  # start, producing /index.html with `window.__CONFIG__.VITE_RPCENDPOINT` set
-  # to the real RPC URL from container env. Verify both that the inline script
-  # is present AND that the placeholder was replaced (no literal `${VAR}`).
+  # Pattern C: start-nginx.sh runs envsubst on config.js.template at container
+  # start, producing /config.js with `window.__CONFIG__.VITE_RPCENDPOINT` set
+  # to the real RPC URL from container env. Verify the file is reachable and
+  # the placeholder was replaced (no literal `${VAR}`).
   local pattern="$1"
-  local body
-  body=$(curl -sf "$BASE/" || true)
-  if ! echo "$body" | grep -q 'window.__CONFIG__'; then
-    echo "FAIL: served index.html missing window.__CONFIG__ inline script"
+  local cfg
+  cfg=$(curl -sf "$BASE/config.js" || true)
+  if [[ -z "$cfg" ]]; then
+    echo "FAIL: GET $BASE/config.js returned empty / 404"
     FAIL=$((FAIL + 1))
     return
   fi
-  if echo "$body" | grep -q '\${VITE_RPCENDPOINT}'; then
-    echo "FAIL: envsubst did not replace \${VITE_RPCENDPOINT} placeholder"
+  if ! echo "$cfg" | grep -q 'window.__CONFIG__'; then
+    echo "FAIL: /config.js does not assign window.__CONFIG__"
     FAIL=$((FAIL + 1))
     return
   fi
-  if echo "$body" | grep -q "VITE_RPCENDPOINT: \"$pattern\""; then
-    echo "PASS: window.__CONFIG__.VITE_RPCENDPOINT substituted with '$pattern'"
+  if echo "$cfg" | grep -q '\${VITE_RPCENDPOINT}'; then
+    echo "FAIL: envsubst did not replace \${VITE_RPCENDPOINT} placeholder in /config.js"
+    FAIL=$((FAIL + 1))
+    return
+  fi
+  if echo "$cfg" | grep -q "VITE_RPCENDPOINT: \"$pattern\""; then
+    echo "PASS: window.__CONFIG__.VITE_RPCENDPOINT substituted with '$pattern' in /config.js"
     PASS=$((PASS + 1))
   else
-    echo "FAIL: window.__CONFIG__.VITE_RPCENDPOINT does not contain '$pattern'"
+    echo "FAIL: /config.js's window.__CONFIG__.VITE_RPCENDPOINT does not contain '$pattern'"
     FAIL=$((FAIL + 1))
   fi
 }

@@ -1,5 +1,5 @@
 // AccountForm.tsx
-import React, { useEffect, useState } from 'react'
+import React, { useState } from 'react'
 import { t } from 'i18next'
 import {
   formatEther,
@@ -28,15 +28,9 @@ const AccountForm = () => {
   const [asset, setAsset] = useState('ETH')
   const [disable, setDisable] = useState(false)
 
-  useEffect(() => {
-    void getBalance()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
   const getBalance = async (_event?: unknown) => {
-    if (isValidAddress(destinationAddress)) {
-      setDisable(true)
-    }
+    if (!isValidAddress(destinationAddress)) return
+    setDisable(true)
     setBalance(0n)
     setBlock(0)
     const assetCbValue: string = (
