@@ -72,7 +72,7 @@ The SPA is a single React app served from a static nginx image. All blockchain c
 
 ### Runtime env-var injection (Pattern C)
 
-`Dockerfile.prod` is environment-agnostic — Vite emits `index.html` containing an inline `<script>` block that sets `window.__CONFIG__ = { VITE_RPCENDPOINT: "${VITE_RPCENDPOINT}", VITE_BASE_URL: "${VITE_BASE_URL}" }`. The build renames it to `index.html.template`. At container startup, `start-nginx.sh` runs `envsubst` against that single template (restricted variable list — only `$VITE_RPCENDPOINT` and `$VITE_BASE_URL` are substituted) and writes the result to `index.html`. The SPA reads `window.__CONFIG__` via `src/config.ts`, which falls through to `import.meta.env` when the placeholders are still literal (i.e. `pnpm dev`). The K8s `ConfigMap` in `k8s/cm.yaml` provides the runtime values in cluster — see [`src/config.ts`](src/config.ts), [`index.html`](index.html), and [`start-nginx.sh`](start-nginx.sh).
+`Dockerfile.prod` is environment-agnostic — `public/config.js` carries `window.__CONFIG__ = { VITE_RPCENDPOINT: "${VITE_RPCENDPOINT}", VITE_BASE_URL: "${VITE_BASE_URL}" }` with literal placeholders. Vite copies it to `dist/config.js`; the build renames it to `dist/config.js.template`. At container startup, `start-nginx.sh` runs `envsubst` against that single template (restricted to `$VITE_RPCENDPOINT $VITE_BASE_URL`) and writes the result to `/config.js`. `index.html` loads it via `<script src="/config.js"></script>`. The SPA reads `window.__CONFIG__` via `src/config.ts`, which falls through to `import.meta.env` when the placeholders are still literal (i.e. `pnpm dev`). **External file, not inline**: nginx CSP is `script-src 'self'`, which forbids inline scripts without a per-deploy nonce/hash; `/config.js` under `/` is allowed by `'self'` without weakening CSP. nginx serves it with `Cache-Control: no-store` so deploys pick up new values immediately. The K8s `ConfigMap` in `k8s/cm.yaml` provides the runtime values in cluster — see [`src/config.ts`](src/config.ts), [`public/config.js`](public/config.js), and [`start-nginx.sh`](start-nginx.sh).
 
 ### Path alias
 
@@ -127,7 +127,7 @@ C4Deployment
     Deployment_Node(cluster, "KinD cluster", "kindest/node v1.35.1") {
       Deployment_Node(ns, "Namespace: web3") {
         Deployment_Node(pod, "Pod (Deployment, replicas=1)") {
-          Container(init, "seed-html (init)", "Copies image's html dir (assets + index.html.template) to writable emptyDir")
+          Container(init, "seed-html (init)", "Copies image's html dir (assets + index.html + config.js.template) to writable emptyDir")
           Container(nginx, "web3-sample-app", "nginx-unprivileged 1.29.8 on :8080")
         }
         ContainerDb(cm, "ConfigMap", "web3-sample-app-config — VITE_RPCENDPOINT, VITE_BASE_URL, PORT")
@@ -142,10 +142,10 @@ C4Deployment
   Rel(envoy, svc, "Routes to")
   Rel(svc, nginx, "Routes to")
   Rel(nginx, cm, "Reads env from", "envFrom")
-  Rel(nginx, rpc, "JSON-RPC", "URL from window.__CONFIG__ (envsubst'd index.html)")
+  Rel(nginx, rpc, "JSON-RPC", "URL from window.__CONFIG__ (envsubst'd /config.js)")
 ```
 
-The `seed-html` init container copies the baked SPA bundle (`assets/` plus `index.html.template`) from the read-only image filesystem into a writable `emptyDir` mounted at `/usr/share/nginx/html`. The main container's `start-nginx.sh` then runs `envsubst` against `index.html.template` only (variables restricted to `$VITE_RPCENDPOINT $VITE_BASE_URL`) and writes the result to `index.html`. The SPA reads the substituted values via `window.__CONFIG__` at boot. The `assets/` JS bundles are byte-identical across environments, so consumers can verify by digest and Trivy/Cosign signatures stay consistent. This is what makes "build once, configure at deploy time" work despite `readOnlyRootFilesystem: true` on the main container — and the initContainer image MUST stay in lockstep with the main container image (both are patched to the same tag by `kind-deploy` via `KIND_IMAGE_PATCH`).
+The `seed-html` init container copies the baked SPA bundle (`assets/`, `index.html`, and `config.js.template`) from the read-only image filesystem into a writable `emptyDir` mounted at `/usr/share/nginx/html`. The main container's `start-nginx.sh` then runs `envsubst` against `config.js.template` only (variables restricted to `$VITE_RPCENDPOINT $VITE_BASE_URL`) and writes the result to `/config.js`. The SPA reads the substituted values via `window.__CONFIG__` at boot. The `assets/` JS bundles AND `index.html` are byte-identical across environments, so consumers can verify by digest and Trivy/Cosign signatures stay consistent. This is what makes "build once, configure at deploy time" work despite `readOnlyRootFilesystem: true` on the main container — and the initContainer image MUST stay in lockstep with the main container image (both are patched to the same tag by `kind-deploy` via `KIND_IMAGE_PATCH`).
 
 ## Testing
 
@@ -155,8 +155,8 @@ Four test layers, each with its own Makefile target, config, and CI job:
 |-------|--------|-------|---------------|----------------|
 | Unit + Component | `make test` | `src/store/models/__tests__/`, `src/service/ether/__tests__/ether.test.ts`, `src/components/__tests__/` | jsdom (vitest, in-process) | Pure functions, Redux slices, mocked ether service, components rendered via `renderWithProviders` |
 | Integration | `make integration-test` | `src/service/ether/__tests__/ether.integration.test.ts` | node (vitest, real network) | Ether service against the real `VITE_RPCENDPOINT` (block fetch, ETH/DAI balance, malformed-input negatives) |
-| E2E — HTTP | `make e2e` | `e2e/e2e-test.sh` | KinD + cloud-provider-kind LoadBalancer | nginx routes (`/internal/isalive`, `/internal/isready`, `/publicnode` → 307, SPA fallback, missing asset 404) + verifies `start-nginx.sh` substituted `VITE_RPCENDPOINT` into the inline `window.__CONFIG__` in served `index.html` |
-| E2E — Browser | `make e2e-browser` | `e2e/playwright.config.ts`, `e2e/account-form.spec.ts` | KinD + cloud-provider-kind + Playwright Chromium | AccountForm renders + real RPC roundtrip updates the displayed block number |
+| E2E — HTTP | `make e2e` | `e2e/e2e-test.sh` | KinD + cloud-provider-kind LoadBalancer | nginx routes (`/internal/isalive`, `/internal/isready`, `/publicnode` → 307, SPA fallback, missing asset 404) + verifies `start-nginx.sh` substituted `VITE_RPCENDPOINT` into served `/config.js` |
+| E2E — Browser | `make e2e-browser` | `e2e/playwright.config.ts`, `e2e/account-form.spec.ts` | KinD + cloud-provider-kind + Playwright Chromium | AccountForm renders + real RPC roundtrip updates the displayed block number — gated in CI as the only layer that catches CSP violations and runtime SPA errors |
 
 ```bash
 make test               # unit + component (~1s)
@@ -230,7 +230,7 @@ xdg-open "http://${service_ip}:8080"
 kubectl delete -f ./k8s --namespace=web3
 ```
 
-The K8s ConfigMap (`k8s/cm.yaml`) provides `VITE_RPCENDPOINT` to the running pod; `start-nginx.sh` substitutes it into the inline `window.__CONFIG__` script in `/index.html` at startup (Pattern C — see [Runtime env-var injection](#runtime-env-var-injection-pattern-c)).
+The K8s ConfigMap (`k8s/cm.yaml`) provides `VITE_RPCENDPOINT` to the running pod; `start-nginx.sh` substitutes it into `/config.js` at container startup (Pattern C — see [Runtime env-var injection](#runtime-env-var-injection-pattern-c)).
 
 ## Available Make Targets
 

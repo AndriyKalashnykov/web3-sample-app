@@ -13,7 +13,7 @@ COPY . .
 # inside an inline `window.__CONFIG__` script). No env-var baking required
 # — Vite simply emits index.html as-is with the placeholders. Build is
 # fully environment-agnostic.
-RUN pnpm build && mv dist/index.html dist/index.html.template
+RUN pnpm build && mv dist/config.js dist/config.js.template
 
 # https://hub.docker.com/r/nginxinc/nginx-unprivileged/tags
 FROM nginxinc/nginx-unprivileged:1.29.8-alpine@sha256:30c5bce612513c0fcd49d5a349cb99f7a214d174f7455f7107eeccfd10a68b02 AS server
