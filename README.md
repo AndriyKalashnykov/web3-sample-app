@@ -7,6 +7,20 @@
 
 Reference React SPA that queries ETH and DAI ERC-20 balances from the Ethereum blockchain via viem, packaged as a non-root nginx container and deployable to Kubernetes.
 
+```mermaid
+C4Context
+    title System Context — Web3 Sample App
+
+    Person(user, "End User", "Browser, supplies an Ethereum address")
+    System(spa, "Web3 Sample App", "React 19 SPA, viem 2, nginx-served")
+    System_Ext(rpc, "Ethereum JSON-RPC", "viem PublicClient, mainnet, http transport via VITE_RPCENDPOINT")
+    System_Ext(dai, "DAI ERC-20 Contract", "0x6B17…1d0F on Ethereum mainnet")
+
+    Rel(user, spa, "Uses", "HTTPS")
+    Rel(spa, rpc, "getBalance / getBlockNumber", "JSON-RPC over HTTPS")
+    Rel(spa, dai, "balanceOf(address)", "Contract call via JSON-RPC")
+```
+
 | Component | Technology |
 |-----------|------------|
 | Language | TypeScript 6.x (`moduleResolution: "bundler"`) |
@@ -22,20 +36,6 @@ Reference React SPA that queries ETH and DAI ERC-20 balances from the Ethereum b
 | CI/CD | GitHub Actions, Renovate (platform automerge) |
 | Code quality | Prettier, hadolint, Trivy (fs+config), gitleaks |
 | Tool versioning | mise (single source of truth in `.mise.toml`) |
-
-```mermaid
-C4Context
-    title System Context — Web3 Sample App
-
-    Person(user, "End User", "Browser, supplies an Ethereum address")
-    System(spa, "Web3 Sample App", "React 19 SPA, viem 2, nginx-served")
-    System_Ext(rpc, "Ethereum JSON-RPC", "viem PublicClient, mainnet, http transport via VITE_RPCENDPOINT")
-    System_Ext(dai, "DAI ERC-20 Contract", "0x6B17…1d0F on Ethereum mainnet")
-
-    Rel(user, spa, "Uses", "HTTPS")
-    Rel(spa, rpc, "getBalance / getBlockNumber", "JSON-RPC over HTTPS")
-    Rel(spa, dai, "balanceOf(address)", "Contract call via JSON-RPC")
-```
 
 ## Quick Start
 
