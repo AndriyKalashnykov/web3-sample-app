@@ -43,6 +43,7 @@ LABEL org.opencontainers.image.title="Web3 Sample App" \
       io.artifacthub.package.license="MIT"
 
 COPY --from=builder --chown=nginx:nginx ./app/nginx/nginx.conf /etc/nginx/conf.d/default.conf
+COPY --from=builder --chown=nginx:nginx ./app/nginx/security-headers.conf /etc/nginx/conf.d/security-headers.conf
 COPY --from=builder --chown=nginx:nginx ./app/dist /usr/share/nginx/html
 EXPOSE 8080
 COPY --from=builder --chown=nginx:nginx ./app/start-nginx.sh /usr/local/bin/start-nginx.sh
