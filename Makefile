@@ -2,7 +2,7 @@
 SHELL := /bin/bash
 
 APP_NAME       := web3-sample-app
-CURRENTTAG     := $(shell git describe --tags --abbrev=0 2>/dev/null || echo "dev")
+CURRENTTAG     := $(shell git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || echo "dev")
 LOCAL_BIN      := $(HOME)/.local/bin
 MISE_DATA_DIR  := $(HOME)/.local/share/mise
 
