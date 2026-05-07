@@ -81,13 +81,14 @@
       "automerge": true
     },
     {
-      "description": "Group Docker base images",
+      "description": "Group Docker base images (Dockerfiles AND custom-regex docker-datasource pins like CLOUD_PROVIDER_KIND_VERSION / MERMAID_CLI_VERSION / KIND_NODE_IMAGE)",
       "matchDatasources": ["docker"],
       "groupName": "Docker dependencies"
     },
     {
-      "description": "Group mise + Makefile tool versions into one PR",
+      "description": "Group mise + Makefile tool versions into one PR (excluding docker datasources, which are claimed by the Docker group above)",
       "matchManagers": ["mise", "custom.regex"],
+      "matchDatasources": ["github-releases", "github-tags", "npm", "go", "pypi"],
       "groupName": "mise & Makefile tools"
     }
   ]

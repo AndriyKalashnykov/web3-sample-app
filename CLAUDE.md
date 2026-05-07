@@ -148,7 +148,6 @@ The `docker` job in `ci.yml` ships images on tag pushes; on non-tag pushes it ru
 
 Last reviewed: 2026-05-07 (post `/project-review` apply — kubectl context safety, kindccm pruning, cloud-provider-kind via Docker, Rulesets-safe `changes` job, Pattern A on-every-push validation, Renovate dedupe).
 
-- [ ] **`vite.config.ts` hardcodes `server.port: 8080`** — fine for dev (matches container/k8s/nginx), but PORT env var doesn't propagate there. Low priority; `.env.example` documents the coupling.
 - [ ] **No SBOM published with the image** — Pattern A intentionally disables `sbom: true` to keep the GHCR "OS / Arch" tab rendering. If a downstream consumer needs an SPDX SBOM (e.g. `cosign download attestation --predicate-type https://spdx.dev/Document`), opt into Pattern B and accept the GHCR UI regression.
 - [ ] **Architecture diagram tech-strings drift** — README's C4 diagrams hardcode framework version strings (e.g. `"React 19 SPA, viem 2"`). Renovate cannot update these. Re-run `/architecture-diagrams` after any major bump.
 
