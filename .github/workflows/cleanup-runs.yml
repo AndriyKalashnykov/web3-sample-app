@@ -20,7 +20,7 @@ jobs:
       actions: write
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Delete old workflow runs
         env:
@@ -34,14 +34,11 @@ jobs:
     permissions:
       actions: write
     steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
       - name: Delete caches from merged or deleted branches
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-        run: |
-          gh cache list --limit 100 --json id,ref \
-            --jq '.[] | select(.ref | startswith("refs/pull/") or contains("/merge")) | .id' \
-          | while read -r cache_id; do
-              echo "Deleting cache $cache_id"
-              gh cache delete "$cache_id" || true
-            done
+        run: make cleanup-caches

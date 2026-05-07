@@ -1,4 +1,5 @@
 .DEFAULT_GOAL := help
+SHELL := /bin/bash
 
 APP_NAME       := web3-sample-app
 CURRENTTAG     := $(shell git describe --tags --abbrev=0 2>/dev/null || echo "dev")
@@ -10,19 +11,26 @@ MISE_DATA_DIR  := $(HOME)/.local/share/mise
 export PATH := $(MISE_DATA_DIR)/shims:$(LOCAL_BIN):$(PATH)
 
 # renovate: datasource=docker depName=minlag/mermaid-cli
-MERMAID_CLI_VERSION := 11.12.0
+MERMAID_CLI_VERSION := 11.14.0
 
-# renovate: datasource=docker depName=kindest/node
+# Bumped together with aqua:kubernetes-sigs/kind in .mise.toml — see KinD
+# release notes for the matching node image. Not independently trackable.
 KIND_NODE_IMAGE := v1.35.1
 
 # renovate: datasource=github-releases depName=zaproxy/zaproxy extractVersion=^v(?<version>.*)$
 ZAP_VERSION := 2.17.0
 
-KIND_CLUSTER_NAME := kind
+# renovate: datasource=docker depName=registry.k8s.io/cloud-provider-kind/cloud-controller-manager
+CLOUD_PROVIDER_KIND_VERSION := v0.10.0
+
+KIND_CLUSTER_NAME := $(APP_NAME)
 K8S_NAMESPACE     := web3
 
-# Common kubectl invocation scoped to the project namespace.
-KUBECTL_NS := kubectl --namespace=$(K8S_NAMESPACE)
+# Pin every kubectl call to this project's KinD context so a sibling project
+# running `kubectl config use-context` cannot silently steer recipes to the
+# wrong cluster. See /makefile skill §"Multi-session kubectl context safety".
+KUBECTL    := kubectl --context=kind-$(KIND_CLUSTER_NAME)
+KUBECTL_NS := $(KUBECTL) --namespace=$(K8S_NAMESPACE)
 
 # yq filter that injects the locally-built image tag into both the main
 # container and the seed-html init container in deployment.yaml.
@@ -119,9 +127,17 @@ secrets: deps-secrets
 
 #mermaid-lint: @ Validate Mermaid blocks in markdown files via official CLI
 mermaid-lint:
-	@for f in $$(grep -lF '```mermaid' README.md CLAUDE.md docs/*.md 2>/dev/null || true); do \
+	@set -euo pipefail; \
+	IMAGE="minlag/mermaid-cli:$(MERMAID_CLI_VERSION)"; \
+	for attempt in 1 2 3; do \
+		if docker pull "$$IMAGE" >/dev/null 2>&1; then break; fi; \
+		echo "docker pull $$IMAGE failed (attempt $$attempt/3); retrying..."; \
+		sleep $$((attempt * 5)); \
+		[ "$$attempt" = 3 ] && { echo "ERROR: docker pull $$IMAGE failed after 3 attempts"; exit 1; }; \
+	done; \
+	for f in $$(grep -lF '```mermaid' README.md CLAUDE.md docs/*.md 2>/dev/null || true); do \
 		echo "Checking Mermaid blocks in $$f..."; \
-		docker run --rm -v "$(PWD):/data" minlag/mermaid-cli:$(MERMAID_CLI_VERSION) -i "/data/$$f" -o "/tmp/$$(basename $$f .md)-validated.md" >/dev/null 2>&1 || { \
+		docker run --rm -v "$(PWD):/data" "$$IMAGE" -i "/data/$$f" -o "/tmp/$$(basename $$f .md)-validated.md" >/dev/null || { \
 			echo "ERROR: Mermaid validation failed for $$f"; exit 1; \
 		}; \
 	done
@@ -258,7 +274,7 @@ dast: docker-smoke-test
 ci-run-tag: deps-act
 	@docker container prune -f 2>/dev/null || true
 	@TAG="$$(git describe --tags --abbrev=0 2>/dev/null || echo v0.0.0)"; \
-	echo '{"ref":"refs/tags/'"$$TAG"'"}' > /tmp/act-tag-event.json; \
+	printf '{"ref":"refs/tags/%s","repository":{"default_branch":"main","name":"$(APP_NAME)"}}' "$$TAG" > /tmp/act-tag-event.json; \
 	echo "Using synthetic tag event for $$TAG"
 	@PORT=$$(shuf -i 40000-59999 -n 1); \
 	ARTIFACT_DIR=$$(mktemp -d -t act-artifacts.XXXXXX); \
@@ -266,6 +282,7 @@ ci-run-tag: deps-act
 	act push \
 		--eventpath /tmp/act-tag-event.json \
 		--container-architecture linux/amd64 \
+		--pull=false \
 		--var ACT=true \
 		--artifact-server-port $$PORT \
 		--artifact-server-path $$ARTIFACT_DIR || true
@@ -277,10 +294,15 @@ ci: install static-check test integration-test build
 #ci-run: @ Run GitHub workflow locally using act (random port, ephemeral artifact dir, e2e skipped via vars.ACT)
 ci-run: deps-act
 	@docker container prune -f 2>/dev/null || true
-	@PORT=$$(shuf -i 40000-59999 -n 1); \
+	@EVENT_FILE=$$(mktemp /tmp/act-push-event.XXXXXX.json); \
+	printf '{"ref":"refs/heads/main","repository":{"default_branch":"main","name":"$(APP_NAME)"}}' > "$$EVENT_FILE"; \
+	PORT=$$(shuf -i 40000-59999 -n 1); \
 	ARTIFACT_DIR=$$(mktemp -d -t act-artifacts.XXXXXX); \
-	echo "Using act port=$$PORT artifacts=$$ARTIFACT_DIR"; \
-	act push --container-architecture linux/amd64 \
+	echo "Using act port=$$PORT artifacts=$$ARTIFACT_DIR event=$$EVENT_FILE"; \
+	act push \
+		--eventpath "$$EVENT_FILE" \
+		--container-architecture linux/amd64 \
+		--pull=false \
 		--var ACT=true \
 		--artifact-server-port $$PORT \
 		--artifact-server-path $$ARTIFACT_DIR
@@ -333,31 +355,40 @@ kind-create: deps-k8s
 
 #kind-cloud-provider-start: @ Start cloud-provider-kind in background (provides LoadBalancer IPs to kind)
 kind-cloud-provider-start: deps-k8s
-	@if ! pgrep -f '^[^ ]*cloud-provider-kind$$' >/dev/null 2>&1; then \
-		echo "Starting cloud-provider-kind in background..."; \
-		nohup cloud-provider-kind >/tmp/cloud-provider-kind.log 2>&1 & \
-		sleep 2; \
-	fi
-	@PID=$$(pgrep -f '^[^ ]*cloud-provider-kind$$'); \
-	if [ -z "$$PID" ]; then \
-		echo "ERROR: cloud-provider-kind failed to start; see /tmp/cloud-provider-kind.log"; \
-		tail -20 /tmp/cloud-provider-kind.log 2>/dev/null || true; \
+	@IMAGE="registry.k8s.io/cloud-provider-kind/cloud-controller-manager:$(CLOUD_PROVIDER_KIND_VERSION)"; \
+	if [ -n "$$(docker ps -aq --filter name=^cloud-provider-kind$$)" ]; then \
+		docker start cloud-provider-kind >/dev/null 2>&1 || true; \
+	else \
+		echo "Starting cloud-provider-kind container..."; \
+		docker run -d --name cloud-provider-kind --restart unless-stopped \
+			--network kind \
+			-v /var/run/docker.sock:/var/run/docker.sock \
+			"$$IMAGE" >/dev/null; \
+	fi; \
+	if [ -z "$$(docker ps -q --filter name=^cloud-provider-kind$$)" ]; then \
+		echo "ERROR: cloud-provider-kind container failed to start"; \
+		docker logs cloud-provider-kind 2>&1 | tail -20 || true; \
 		exit 1; \
 	fi; \
-	echo "cloud-provider-kind running (PID $$PID)"
+	echo "cloud-provider-kind running"
 
-#kind-cloud-provider-stop: @ Stop cloud-provider-kind background process
+#kind-cloud-provider-stop: @ Stop cloud-provider-kind container (and any kindccm-* sidecars)
 kind-cloud-provider-stop:
-	@pkill -f '^[^ ]*cloud-provider-kind$$' 2>/dev/null || true
+	@docker rm -f cloud-provider-kind >/dev/null 2>&1 || true
+	@ORPHANS=$$(docker ps -aq --filter name=kindccm- 2>/dev/null); \
+	if [ -n "$$ORPHANS" ]; then \
+		echo "Removing kindccm-* orphan sidecars..."; \
+		docker rm -f $$ORPHANS >/dev/null 2>&1 || true; \
+	fi
 
-#kind-destroy: @ Delete the local KinD cluster + stop cloud-provider-kind
+#kind-destroy: @ Delete the local KinD cluster + stop cloud-provider-kind + prune kindccm-* orphans
 kind-destroy: kind-cloud-provider-stop
 	@command -v kind >/dev/null 2>&1 && kind delete cluster --name $(KIND_CLUSTER_NAME) 2>/dev/null || true
 
 #kind-deploy: @ Deploy production image to a local KinD cluster (LoadBalancer via cloud-provider-kind)
 kind-deploy: deps-k8s kind-create image-build-prod kind-cloud-provider-start
 	@kind load docker-image $(APP_NAME):$(CURRENTTAG) -n $(KIND_CLUSTER_NAME) && \
-	kubectl apply -f ./k8s/ns.yaml && \
+	$(KUBECTL) apply -f ./k8s/ns.yaml && \
 	$(KUBECTL_NS) apply -f ./k8s/cm.yaml && \
 	yq eval '$(KIND_IMAGE_PATCH)' ./k8s/deployment.yaml | $(KUBECTL_NS) apply -f - && \
 	$(KUBECTL_NS) apply -f ./k8s/service.yaml
@@ -366,12 +397,12 @@ kind-deploy: deps-k8s kind-create image-build-prod kind-cloud-provider-start
 kind-undeploy: deps-k8s
 	@$(KUBECTL_NS) delete -f ./k8s/deployment.yaml --ignore-not-found=true && \
 	$(KUBECTL_NS) delete -f ./k8s/cm.yaml --ignore-not-found=true && \
-	kubectl delete -f ./k8s/ns.yaml --ignore-not-found=true
+	$(KUBECTL) delete -f ./k8s/ns.yaml --ignore-not-found=true
 
 #kind-redeploy: @ Redeploy production image to a local KinD cluster (idempotent — recreates ns+cm+svc if missing)
 kind-redeploy: deps-k8s kind-create image-build-prod kind-cloud-provider-start
 	@kind load docker-image $(APP_NAME):$(CURRENTTAG) -n $(KIND_CLUSTER_NAME) && \
-	kubectl apply -f ./k8s/ns.yaml && \
+	$(KUBECTL) apply -f ./k8s/ns.yaml && \
 	$(KUBECTL_NS) apply -f ./k8s/cm.yaml && \
 	$(KUBECTL_NS) delete -f ./k8s/deployment.yaml --ignore-not-found=true && \
 	yq eval '$(KIND_IMAGE_PATCH)' ./k8s/deployment.yaml | $(KUBECTL_NS) apply -f - && \
@@ -405,6 +436,15 @@ cleanup-runs:
 		gh run delete "$$run_id" || true; \
 	done
 
+#cleanup-caches: @ Delete GitHub Actions caches from merged or deleted branches
+cleanup-caches:
+	@gh cache list --limit 100 --json id,ref \
+		--jq '.[] | select(.ref | startswith("refs/pull/") or contains("/merge")) | .id' \
+	| while read -r cache_id; do \
+		echo "Deleting cache $$cache_id"; \
+		gh cache delete "$$cache_id" || true; \
+	done
+
 #cleanup-images: @ Delete untagged GHCR images (keeps 5 most recent)
 cleanup-images:
 	@PACKAGE="$(APP_NAME)"; \
@@ -426,4 +466,4 @@ cleanup-images:
 	ci ci-run ci-run-tag release tag-delete \
 	kind-up kind-down kind-create kind-destroy kind-cloud-provider-start kind-cloud-provider-stop \
 	kind-deploy kind-undeploy kind-redeploy deps-prune deps-prune-check renovate-validate \
-	cleanup-runs cleanup-images
+	cleanup-runs cleanup-caches cleanup-images
