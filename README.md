@@ -17,7 +17,7 @@ Reference React SPA that queries ETH and DAI ERC-20 balances from the Ethereum b
 | Web3 | viem 2 (`createPublicClient`, `http`, `readContract`, `parseAbi`) |
 | i18n | i18next + react-i18next (English bundled) |
 | Testing | Vitest 4, React Testing Library, jsdom, Playwright (Chromium) |
-| Container | Builder: `node:24.15.0-alpine`; runtime: `nginxinc/nginx-unprivileged:1.29.8-alpine` (port 8080, runs as UID 101) |
+| Container | Builder: `node:24.15.0-alpine`; runtime: `nginxinc/nginx-unprivileged:1.30.0-alpine` (port 8080, runs as UID 101) |
 | Orchestration | Kubernetes (manifests under `k8s/`); local KinD via Makefile |
 | CI/CD | GitHub Actions, Renovate (platform automerge) |
 | Code quality | Prettier, hadolint, Trivy (fs+config), gitleaks |
@@ -177,7 +177,7 @@ make image-build         # dev image (Node alpine + pnpm dev server)
 make image-build-prod    # production image (nginx-unprivileged on 8080)
 ```
 
-The production Dockerfile is multi-stage: `node:24.15.0-alpine` builder → `nginxinc/nginx-unprivileged:1.29.8-alpine`. Both Dockerfiles use `pnpm install --frozen-lockfile`, pin base images by SHA256 digest, and copy lockfiles before source for layer caching. The final image runs as non-root (UID 101) with `corepack`-provided pnpm.
+The production Dockerfile is multi-stage: `node:24.15.0-alpine` builder → `nginxinc/nginx-unprivileged:1.30.0-alpine`. Both Dockerfiles use `pnpm install --frozen-lockfile`, pin base images by SHA256 digest, and copy lockfiles before source for layer caching. The final image runs as non-root (UID 101) with `corepack`-provided pnpm.
 
 ## Deployment
 
