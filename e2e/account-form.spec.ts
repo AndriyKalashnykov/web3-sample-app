@@ -41,4 +41,34 @@ test.describe('Web3 Sample App — AccountForm', () => {
       )
       .toBeGreaterThan(0)
   })
+
+  test('queries a DAI balance via 3 contract reads and renders a numeric block', async ({
+    page,
+  }) => {
+    // The DAI flow exercises a different code path from ETH: getDAIBalance
+    // issues 3 viem.readContract calls (name/symbol/balanceOf) against the
+    // canonical mainnet DAI contract 0x6B17…1d0F. ETH-only browser e2e
+    // would miss a DAI-specific regression (ABI typo, contract-address
+    // drift, viem readContract envelope change).
+    await page.goto('/')
+
+    // Switch the asset selector to DAI BEFORE filling the address so the
+    // change-handler doesn't fire an ETH lookup against an empty input.
+    await page.locator('#selectAsset').selectOption('DAI')
+    await expect(page.locator('#selectAsset')).toHaveValue('DAI')
+
+    await page.locator('input[placeholder]').first().fill(TEST_ADDRESS)
+    await page.locator('#GetBalanceButton').click()
+
+    await expect
+      .poll(
+        async () => {
+          const text = await page.getByText(/Last Block:/).innerText()
+          const match = text.match(/Last Block:\s*(\d+)/)
+          return match ? Number(match[1]) : 0
+        },
+        { timeout: 30_000, intervals: [500, 1000, 2000] },
+      )
+      .toBeGreaterThan(0)
+  })
 })

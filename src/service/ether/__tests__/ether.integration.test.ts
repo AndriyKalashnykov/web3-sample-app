@@ -1,26 +1,10 @@
 // @vitest-environment node
 import { describe, it, expect, vi, beforeAll } from 'vitest'
-import { createPublicClient, http, formatEther, getAddress } from 'viem'
+import { createPublicClient, http, getAddress } from 'viem'
 import { mainnet } from 'viem/chains'
 
 const TEST_ADDRESS = '0xeB2629a2734e272Bcc07BDA959863f316F4bD4Cf'
-const DAI_ADDRESS = '0x6B175474E89094C44Da98b954EedeAC495271d0F' as const
-
 const DAI_ABI = [
-  {
-    type: 'function',
-    name: 'name',
-    stateMutability: 'view',
-    inputs: [],
-    outputs: [{ type: 'string' }],
-  },
-  {
-    type: 'function',
-    name: 'symbol',
-    stateMutability: 'view',
-    inputs: [],
-    outputs: [{ type: 'string' }],
-  },
   {
     type: 'function',
     name: 'balanceOf',
@@ -30,62 +14,65 @@ const DAI_ABI = [
   },
 ] as const
 
+// Deferred imports — bound in beforeAll AFTER `vi.unstubAllEnvs()` so that
+// when @/config evaluates `import.meta.env.VITE_RPCENDPOINT`, it sees the
+// real `.env` value (the unit setup at src/test/setup.ts otherwise stubs it
+// to http://localhost:8545, which would point the integration suite at a
+// non-existent local RPC).
+let getETHBalance: typeof import('@/service/ether').getETHBalance
+let getDAIBalance: typeof import('@/service/ether').getDAIBalance
+let resetClient: typeof import('@/service/ether').resetClient
 let RPC_ENDPOINT: string
-let client: ReturnType<typeof createPublicClient>
 
-describe('viem service (real RPC)', () => {
-  beforeAll(() => {
+describe('ether service (real RPC, via @/service/ether)', () => {
+  beforeAll(async () => {
     vi.unstubAllEnvs()
     RPC_ENDPOINT = import.meta.env.VITE_RPCENDPOINT
-    client = createPublicClient({
-      chain: mainnet,
-      transport: http(RPC_ENDPOINT),
-    })
+    if (!RPC_ENDPOINT) {
+      throw new Error(
+        'VITE_RPCENDPOINT must be set for the integration suite (e.g. via .env)',
+      )
+    }
+    // Reset module cache so @/config re-reads import.meta.env after unstub,
+    // and @/service/ether picks up the post-unstub config.
+    vi.resetModules()
+    const ether = await import('@/service/ether')
+    getETHBalance = ether.getETHBalance
+    getDAIBalance = ether.getDAIBalance
+    resetClient = ether.resetClient
+    resetClient()
   })
 
-  it('retrieves a block number from the network', async () => {
-    const block = await client.getBlockNumber()
-    expect(block).toBeTypeOf('bigint')
-    expect(block).toBeGreaterThan(0n)
+  it('getETHBalance returns a typed result with a current block and non-negative balance', async () => {
+    const result = await getETHBalance(TEST_ADDRESS)
+    expect(result.block).toBeTypeOf('bigint')
+    expect(result.block).toBeGreaterThan(0n)
+    expect(result.balance).toBeTypeOf('bigint')
+    expect(result.balance).toBeGreaterThanOrEqual(0n)
   }, 15000)
 
-  it('retrieves ETH balance for a real address', async () => {
-    const balance = await client.getBalance({
-      address: getAddress(TEST_ADDRESS),
-    })
-    expect(balance).toBeTypeOf('bigint')
-    expect(balance).toBeGreaterThanOrEqual(0n)
-    expect(Number(formatEther(balance))).toBeGreaterThanOrEqual(0)
-  }, 15000)
-
-  it('retrieves DAI token info and balance for a real address', async () => {
-    const [name, symbol, balance] = await Promise.all([
-      client.readContract({
-        address: DAI_ADDRESS,
-        abi: DAI_ABI,
-        functionName: 'name',
-      }),
-      client.readContract({
-        address: DAI_ADDRESS,
-        abi: DAI_ABI,
-        functionName: 'symbol',
-      }),
-      client.readContract({
-        address: DAI_ADDRESS,
-        abi: DAI_ABI,
-        functionName: 'balanceOf',
-        args: [getAddress(TEST_ADDRESS)],
-      }),
-    ])
-    expect(name).toBe('Dai Stablecoin')
-    expect(symbol).toBe('DAI')
-    expect(balance).toBeTypeOf('bigint')
-    expect(balance).toBeGreaterThanOrEqual(0n)
+  it('getDAIBalance returns Dai Stablecoin / DAI metadata + a non-negative balance + formatted string', async () => {
+    const result = await getDAIBalance(TEST_ADDRESS)
+    expect(result.block).toBeTypeOf('bigint')
+    expect(result.block).toBeGreaterThan(0n)
+    expect(result.name).toBe('Dai Stablecoin')
+    expect(result.symbol).toBe('DAI')
+    expect(result.balance).toBeTypeOf('bigint')
+    expect(result.balance).toBeGreaterThanOrEqual(0n)
+    // balanceFormatted is the human-readable string viem.formatUnits(balance, 18)
+    // produces. Always parses as a finite non-negative number.
+    expect(Number(result.balanceFormatted)).toBeGreaterThanOrEqual(0)
   }, 15000)
 })
 
-describe('viem service (negative paths against real RPC)', () => {
-  it('rejects with a network error when RPC URL is unreachable', async () => {
+describe('ether service (negative paths against real RPC)', () => {
+  it('getAddress throws for a malformed input (validation, no RPC roundtrip)', () => {
+    expect(() => getAddress('not-an-address')).toThrow(
+      /is invalid|invalid|not a valid/i,
+    )
+  })
+
+  it('rejects with a network error when the configured RPC URL is unreachable', async () => {
     const badClient = createPublicClient({
       chain: mainnet,
       transport: http('http://127.0.0.1:1/does-not-exist'),
@@ -93,21 +80,15 @@ describe('viem service (negative paths against real RPC)', () => {
     await expect(badClient.getBlockNumber()).rejects.toBeDefined()
   }, 15000)
 
-  it('rejects when getAddress is called with a malformed value (validation, no RPC)', async () => {
-    expect(() => getAddress('not-an-address')).toThrow(
-      /is invalid|invalid|not a valid/i,
-    )
-  })
-
-  it('returns 0 balance when reading balanceOf on an externally-owned address (not a contract)', async () => {
-    vi.unstubAllEnvs()
+  it('throws ContractFunctionExecutionError when balanceOf is called on an EOA (not a contract)', async () => {
+    // Calling an ERC-20 method on an EOA address yields empty return bytes,
+    // which viem reports as a contract execution error. Asserting on the
+    // error class via message-pattern keeps the test stable across viem
+    // minor versions whose wording evolves.
     const c = createPublicClient({
       chain: mainnet,
-      transport: http(import.meta.env.VITE_RPCENDPOINT),
+      transport: http(RPC_ENDPOINT),
     })
-    // EOA address responds with empty bytes to a `balanceOf` call; viem
-    // raises a ContractFunctionExecutionError. We assert on the error class
-    // rather than the message because viem's wording evolves across minors.
     await expect(
       c.readContract({
         address: getAddress(TEST_ADDRESS),

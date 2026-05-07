@@ -52,6 +52,29 @@ assert_redirect_target() {
   fi
 }
 
+assert_header_present() {
+  # Asserts that an HTTP response header is present and matches a regex.
+  # Catches the "header silently dropped because a `location` block defined
+  # its own `add_header`" failure mode that nginx.conf explicitly warns about.
+  local url="$1" header="$2" pattern="$3"
+  local value
+  value=$(curl -sI "$url" \
+    | awk -v h="$header" 'BEGIN{IGNORECASE=1} tolower($1)==tolower(h":"){sub(/^[^:]*:[ \t]*/,""); print}' \
+    | tr -d '\r')
+  if [[ -z "$value" ]]; then
+    echo "FAIL: GET $url is missing header '$header'"
+    FAIL=$((FAIL + 1))
+    return
+  fi
+  if [[ ! "$value" =~ $pattern ]]; then
+    echo "FAIL: GET $url header '$header' = '$value' (expected ~$pattern)"
+    FAIL=$((FAIL + 1))
+    return
+  fi
+  echo "PASS: GET $url header '$header' = '$value'"
+  PASS=$((PASS + 1))
+}
+
 assert_runtime_config_substituted() {
   # Pattern C: start-nginx.sh runs envsubst on config.js.template at container
   # start, producing /config.js with `window.__CONFIG__.VITE_RPCENDPOINT` set
@@ -111,6 +134,29 @@ assert_redirect_target "$BASE/publicnode" 307 "ethereum-rpc.publicnode.com"
 # inline window.__CONFIG__ script in /index.html by start-nginx.sh's envsubst
 # pass. If the placeholder is still literal, container startup is broken.
 assert_runtime_config_substituted "$EXPECTED_RPC"
+
+# index.html must reference /config.js as an external script — proves the
+# init container's seed-html step copied the bundled HTML into the writable
+# emptyDir before nginx booted (otherwise the served index would be either
+# 404 or the bare unsubstituted template). This is the only assertion that
+# distinguishes "config.js exists at the right path" from "the SPA actually
+# loads it on every page render".
+assert_body_contains "$BASE/" '<script src="/config.js"></script>'
+
+# Security headers must reach the client on the SPA root AND on /config.js.
+# nginx.conf sets these `always`, but a future location-block change that
+# adds its own `add_header` would silently shadow them — assert at the wire.
+for path in "/" "/config.js"; do
+  assert_header_present "$BASE$path" 'Content-Security-Policy'  "default-src 'self'"
+  assert_header_present "$BASE$path" 'X-Frame-Options'          'DENY'
+  assert_header_present "$BASE$path" 'X-Content-Type-Options'   'nosniff'
+  assert_header_present "$BASE$path" 'Referrer-Policy'          'strict-origin-when-cross-origin'
+done
+
+# /config.js must be served with Cache-Control: no-store so the browser
+# always re-fetches it on deploy — otherwise a stale runtime config sticks
+# until the user hard-reloads.
+assert_header_present "$BASE/config.js" 'Cache-Control' 'no-store'
 
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="

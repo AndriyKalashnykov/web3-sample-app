@@ -95,6 +95,21 @@ describe('AccountForm component', () => {
     expect(window.alert).not.toHaveBeenCalled()
   })
 
+  it('does not call getETHBalance via onKeyUp while typing an invalid address', async () => {
+    // Each keystroke fires onKeyUp -> getBalance() -> isValidAddress(). The
+    // mocked getAddress throws for any string that doesn't start with "0x",
+    // so isValidAddress returns false and getBalance returns early. Asserts
+    // that an in-progress address never triggers a wasted RPC roundtrip.
+    const etherMod = await import('@/service/ether')
+    renderWithProviders(<AccountForm />)
+    const user = userEvent.setup()
+
+    await user.type(screen.getByPlaceholderText('Address'), 'abc')
+
+    expect(etherMod.getETHBalance).not.toHaveBeenCalled()
+    expect(etherMod.getDAIBalance).not.toHaveBeenCalled()
+  })
+
   it('calls getETHBalance when Get Balance is clicked with a valid address', async () => {
     const etherMod = await import('@/service/ether')
     renderWithProviders(<AccountForm />)
