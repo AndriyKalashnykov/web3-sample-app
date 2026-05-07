@@ -3,7 +3,7 @@
   "version": "v0.0.18",
   "private": true,
   "packageManager": "pnpm@10.33.0",
-  "description": "Web3 frontend with React, Vite, TypeScript and Ether.js",
+  "description": "Web3 frontend with React, Vite, TypeScript and viem 2",
   "license": "MIT",
   "author": "AndriyKalashnykov(AndriyKalashnykov@gmail.com)",
   "scripts": {

@@ -4,31 +4,7 @@ on:
   push:
     branches: [main]
     tags: ['v*']
-    paths-ignore:
-      - '**.md'
-      - '!CLAUDE.md'
-      - 'docs/**'
-      - 'LICENSE'
-      - '.gitignore'
-      - '.claudeignore'
-      - '.claude/**'
-      - '**.png'
-      - '**.jpg'
-      - '**.gif'
-      - '**.svg'
   pull_request:
-    paths-ignore:
-      - '**.md'
-      - '!CLAUDE.md'
-      - 'docs/**'
-      - 'LICENSE'
-      - '.gitignore'
-      - '.claudeignore'
-      - '.claude/**'
-      - '**.png'
-      - '**.jpg'
-      - '**.gif'
-      - '**.svg'
   workflow_dispatch:
   workflow_call:
 
@@ -38,6 +14,7 @@ concurrency:
 
 permissions:
   contents: read
+  pull-requests: read   # dorny/paths-filter on pull_request events
 
 env:
   # Duplicated from Makefile ZAP_VERSION (no shared source between Makefile +
@@ -48,7 +25,33 @@ env:
 
 jobs:
 
+  changes:
+    # Job-level path filter (Rulesets-safe — heavy jobs gate on the output but
+    # the workflow itself always runs, so `ci-pass` always reports a status).
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      # On tag pushes the diff against `main` may be empty (the tag points at
+      # the same SHA), which would skip everything — force `code=true`.
+      code: ${{ startsWith(github.ref, 'refs/tags/') && 'true' || steps.filter.outputs.code }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Detect code changes
+        id: filter
+        uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
+        with:
+          # `base` is ignored on pull_request events — leave empty there.
+          base: ${{ github.event_name == 'push' && 'main' || '' }}
+          filters: |
+            code:
+              - '!(**.md|docs/**|LICENSE|.gitignore|.claudeignore|.claude/**|**.png|**.jpg|**.gif|**.svg)'
+              - 'CLAUDE.md'
+
   static-check:
+    needs: [changes]
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -70,7 +73,8 @@ jobs:
         run: make static-check
 
   test:
-    needs: [static-check]
+    needs: [changes, static-check]
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -90,7 +94,8 @@ jobs:
         run: make test
 
   integration-test:
-    needs: [static-check]
+    needs: [changes, static-check]
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -114,8 +119,8 @@ jobs:
   e2e:
     # KinD-in-Docker inside act doesn't behave reliably; the `make ci-run` target
     # passes `--var ACT=true` to act so this guard skips the job locally.
-    if: ${{ vars.ACT != 'true' }}
-    needs: [build, test]
+    needs: [changes, build, test]
+    if: ${{ needs.changes.outputs.code == 'true' && vars.ACT != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -131,21 +136,23 @@ jobs:
       - name: Install dependencies
         run: make install
 
-      - name: E2E (KinD + curl via kind extraPortMappings)
+      # KinD + curl assertions against the deployed SPA via the cloud-provider-kind
+      # LoadBalancer IP.
+      - name: Run end-to-end tests
         run: make e2e
 
       # Browser-level e2e — only this layer actually executes JS in a real
       # browser. Without it, CSP violations (script-src blocking inline
       # scripts, missing nonces) and runtime errors in the SPA bundle can
       # ship green. Reuses the cluster from `make e2e` above.
-      - name: E2E Browser (Playwright Chromium against deployed SPA)
+      - name: Run Playwright tests
         run: make e2e-browser
 
-      - name: Tail pod logs on failure
+      - name: Tail pod logs
         if: failure()
-        run: kubectl -n web3 logs -l app=web3-sample-app --tail=200 || true
+        run: kubectl --context=kind-web3-sample-app -n web3 logs -l app=web3-sample-app --tail=200 || true
 
-      - name: Upload Playwright report on failure
+      - name: Upload Playwright report
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -157,7 +164,8 @@ jobs:
           if-no-files-found: ignore
 
   build:
-    needs: [static-check]
+    needs: [changes, static-check]
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -178,21 +186,23 @@ jobs:
 
       - name: Upload build artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        continue-on-error: true
         with:
           name: dist
           path: dist/
           retention-days: 7
 
   docker:
-    needs: [static-check, build, test]
-    if: startsWith(github.ref, 'refs/tags/')
+    # Pattern A: validate on every push (Gates 1-3 + multi-arch validation
+    # build), publish + sign only on tag pushes. Catches regressions before
+    # release day instead of on it.
+    needs: [changes, static-check, build, test]
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
       contents: read
       packages: write
-      id-token: write   # cosign keyless OIDC (Sigstore Fulcio)
+      id-token: write   # cosign keyless OIDC (Sigstore Fulcio) — gated to tag-push steps below
 
     steps:
       - name: Checkout
@@ -271,12 +281,15 @@ jobs:
       # All gates passed → publish multi-arch
       # ===============================================================
       - name: Log in to GHCR
+        if: startsWith(github.ref, 'refs/tags/')
         uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # On non-tag pushes this runs as a multi-arch validation build (push: false)
+      # so cross-platform regressions surface before tag day.
       - name: Build and push
         id: push
         uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
@@ -284,21 +297,23 @@ jobs:
           context: .
           file: ./Dockerfile.prod
           platforms: linux/amd64,linux/arm64
-          push: true
+          push: ${{ startsWith(github.ref, 'refs/tags/') }}
           provenance: false
           sbom: false
-          tags: ${{ steps.meta.outputs.tags }}
+          tags: ${{ steps.meta.outputs.tags || format('{0}/{1}:dev', 'ghcr.io', github.repository) }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
       # ===============================================================
-      # Post-push: cosign keyless signing by digest
+      # Post-push: cosign keyless signing by digest (tag pushes only)
       # ===============================================================
       - name: Install cosign
+        if: startsWith(github.ref, 'refs/tags/')
         uses: sigstore/cosign-installer@cad07c2e89fa2edd6e2d7bab4c1aa38e53f76003 # v4.1.1
 
       - name: Sign image with cosign
+        if: startsWith(github.ref, 'refs/tags/')
         env:
           TAGS: ${{ steps.meta.outputs.tags }}
           DIGEST: ${{ steps.push.outputs.digest }}
@@ -314,8 +329,8 @@ jobs:
     # Runs in parallel with `docker`. Skipped under act because ZAP's docker-
     # in-docker bind mount of $GITHUB_WORKSPACE/zap-output doesn't round-trip
     # through act's host docker daemon. `make ci-run` passes --var ACT=true.
-    if: ${{ vars.ACT != 'true' }}
-    needs: [build, test]
+    needs: [changes, build, test]
+    if: ${{ needs.changes.outputs.code == 'true' && vars.ACT != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -341,7 +356,7 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Smoke test (boot for ZAP target)
+      - name: Smoke test
         run: |
           set -euo pipefail
           docker run -d --name=web3-sample-app-smoke -p 8080:8080 web3-sample-app:scan >/dev/null
@@ -392,7 +407,7 @@ jobs:
 
   ci-pass:
     if: always()
-    needs: [static-check, build, test, integration-test, e2e, dast, docker]
+    needs: [changes, static-check, build, test, integration-test, e2e, dast, docker]
     timeout-minutes: 2
     runs-on: ubuntu-latest
     steps:
@@ -400,5 +415,9 @@ jobs:
         run: |
           if [[ "${{ contains(needs.*.result, 'failure') }}" == "true" ]]; then
             echo "One or more jobs failed"
+            exit 1
+          fi
+          if [[ "${{ contains(needs.*.result, 'cancelled') }}" == "true" ]]; then
+            echo "One or more jobs were cancelled"
             exit 1
           fi

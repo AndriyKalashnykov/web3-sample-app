@@ -16,7 +16,7 @@ Reference React SPA that queries ETH and DAI ERC-20 balances from the Ethereum b
 | State | Redux Toolkit 2 (`createSlice`, typed hooks) |
 | Web3 | viem 2 (`createPublicClient`, `http`, `readContract`, `parseAbi`) |
 | i18n | i18next + react-i18next (English bundled) |
-| Testing | Vitest 4, React Testing Library, jsdom |
+| Testing | Vitest 4, React Testing Library, jsdom, Playwright (Chromium) |
 | Container | Builder: `node:24.15.0-alpine`; runtime: `nginxinc/nginx-unprivileged:1.29.8-alpine` (port 8080, runs as UID 101) |
 | Orchestration | Kubernetes (manifests under `k8s/`); local KinD via Makefile |
 | CI/CD | GitHub Actions, Renovate (platform automerge) |
@@ -120,19 +120,15 @@ C4Deployment
 
   Person(user, "End User", "Browser")
 
-  Deployment_Node(host, "Developer Host", "Linux + Docker") {
-    Deployment_Node(cpk, "cloud-provider-kind", "Background daemon (mise)") {
-      Container(envoy, "envoy LB proxy", "Per-Service LB on kind Docker network")
-    }
-    Deployment_Node(cluster, "KinD cluster", "kindest/node v1.35.1") {
-      Deployment_Node(ns, "Namespace: web3") {
-        Deployment_Node(pod, "Pod (Deployment, replicas=1)") {
-          Container(init, "seed-html (init)", "Copies image's html dir (assets + index.html + config.js.template) to writable emptyDir")
-          Container(nginx, "web3-sample-app", "nginx-unprivileged 1.29.8 on :8080")
-        }
-        ContainerDb(cm, "ConfigMap", "web3-sample-app-config — VITE_RPCENDPOINT, VITE_BASE_URL, PORT")
-        Container(svc, "Service", "type: LoadBalancer, port 8080 → pod :8080")
+  Deployment_Node(host, "Developer Host", "Linux + Docker; kind Docker network") {
+    Container(envoy, "cloud-provider-kind + kindccm envoy", "Per-Service LB proxy on the kind Docker network")
+    Deployment_Node(cluster, "KinD cluster (namespace: web3)", "kindest/node") {
+      Deployment_Node(pod, "Pod (Deployment, replicas=1)") {
+        Container(init, "seed-html (init)", "Copies bundled assets + index.html + config.js.template into writable emptyDir")
+        Container(nginx, "web3-sample-app", "nginx-unprivileged on :8080; envsubst /config.js at boot")
       }
+      ContainerDb(cm, "ConfigMap", "web3-sample-app-config: VITE_RPCENDPOINT, VITE_BASE_URL, PORT")
+      Container(svc, "K8s Service", "type: LoadBalancer, port 8080 → pod :8080")
     }
   }
 
@@ -142,7 +138,7 @@ C4Deployment
   Rel(envoy, svc, "Routes to")
   Rel(svc, nginx, "Routes to")
   Rel(nginx, cm, "Reads env from", "envFrom")
-  Rel(nginx, rpc, "JSON-RPC", "URL from window.__CONFIG__ (envsubst'd /config.js)")
+  Rel(nginx, rpc, "JSON-RPC", "via window.__CONFIG__")
 ```
 
 The `seed-html` init container copies the baked SPA bundle (`assets/`, `index.html`, and `config.js.template`) from the read-only image filesystem into a writable `emptyDir` mounted at `/usr/share/nginx/html`. The main container's `start-nginx.sh` then runs `envsubst` against `config.js.template` only (variables restricted to `$VITE_RPCENDPOINT $VITE_BASE_URL`) and writes the result to `/config.js`. The SPA reads the substituted values via `window.__CONFIG__` at boot. The `assets/` JS bundles AND `index.html` are byte-identical across environments, so consumers can verify by digest and Trivy/Cosign signatures stay consistent. This is what makes "build once, configure at deploy time" work despite `readOnlyRootFilesystem: true` on the main container — and the initContainer image MUST stay in lockstep with the main container image (both are patched to the same tag by `kind-deploy` via `KIND_IMAGE_PATCH`).
@@ -246,7 +242,7 @@ Run `make help` to see the full list. Grouped by purpose:
 | `make clean` | Cleanup `node_modules/` and `dist/` |
 | `make upgrade` | Upgrade pnpm dependencies |
 
-### Testing
+### Test Targets
 
 | Target | Description |
 |--------|-------------|
@@ -319,6 +315,7 @@ Run `make help` to see the full list. Grouped by purpose:
 | `make tag-delete TAG=v0.0.1` | Delete a tag locally and remotely |
 | `make renovate-validate` | Validate Renovate configuration |
 | `make cleanup-runs` | Delete workflow runs older than 7 days (keeps at least 5) |
+| `make cleanup-caches` | Delete GitHub Actions caches from merged or deleted branches |
 | `make cleanup-images` | Delete untagged GHCR images (keeps 5 most recent) |
 
 ## CI/CD
@@ -327,14 +324,22 @@ GitHub Actions runs on every push to `main`, every tag `v*`, every pull request,
 
 | Job | Triggers | Steps |
 |-----|----------|-------|
-| **static-check** | every event | `make install` + `make static-check` (lint, vulncheck, trivy-fs, trivy-config, secrets, mermaid-lint, deps-prune-check) |
+| **changes** | every event | `dorny/paths-filter` detects whether the diff includes code (anything outside docs/images). Doc-only PRs short-circuit downstream jobs while still reporting `ci-pass` (Rulesets-safe) |
+| **static-check** | after changes (code paths only) | `make install` + `make static-check` (lint, vulncheck, trivy-fs, trivy-config, secrets, mermaid-lint, deps-prune-check) |
 | **test** | after static-check | `make test` (unit + component) |
 | **integration-test** | after static-check | `make integration-test` (real-RPC integration suite) |
 | **build** | after static-check | `make build`; uploads `dist/` artifact |
-| **e2e** | after build + test (skipped under act) | KinD + cloud-provider-kind LoadBalancer + curl assertions — `make e2e` |
+| **e2e** | after build + test (skipped under act) | KinD + cloud-provider-kind LoadBalancer + curl assertions + Playwright browser e2e — `make e2e` and `make e2e-browser` |
 | **dast** | after build + test (skipped under act) | OWASP ZAP baseline scan against booted container; ZAP image cached |
-| **docker** | after static-check + build + test, **tag push only** | Pre-push gates (Trivy image scan, smoke test) → multi-arch build + push → cosign keyless signing |
-| **ci-pass** | always (after all above) | Aggregator gate; fails if any upstream job failed |
+| **docker** | after static-check + build + test | Validates Trivy image scan + smoke test + multi-arch build on every push; pushes to GHCR + cosign keyless signing only on tag push |
+| **ci-pass** | always (after all above) | Aggregator gate; fails if any upstream job failed or was cancelled |
+
+#### Required Secrets and Variables
+
+| Name | Type | Used by | Purpose |
+|------|------|---------|---------|
+| `vars.ACT` | Variable | `e2e`, `dast` | Set automatically by `act` (via `make ci-run --var ACT=true`); skips KinD-based and DAST jobs locally because docker-in-docker inside act is unreliable |
+| `secrets.GITHUB_TOKEN` | Secret (auto) | `docker`, cleanup workflows | Provided by GitHub Actions; used to push to GHCR and call the API |
 
 ### Pre-push image hardening
 
@@ -371,7 +376,7 @@ Tool versions for CI come from `.mise.toml` via [`jdx/mise-action`](https://gith
 | Workflow | Schedule | Purpose |
 |----------|----------|---------|
 | `cleanup-images.yml` | Weekly (Sunday 03:00 UTC) | Delete untagged GHCR images, keep 5 most recent (calls `make cleanup-images`) |
-| `cleanup-runs.yml` | Weekly (Sunday 00:00 UTC) | Delete workflow runs older than 7 days + caches from merged branches (calls `make cleanup-runs`) |
+| `cleanup-runs.yml` | Weekly (Sunday 00:00 UTC) | Delete workflow runs older than 7 days (`make cleanup-runs`) + caches from merged branches (`make cleanup-caches`) |
 
 ### Run CI locally
 
