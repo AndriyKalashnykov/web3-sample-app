@@ -2,7 +2,12 @@
 SHELL := /bin/bash
 
 APP_NAME       := web3-sample-app
-CURRENTTAG     := $(shell git describe --tags --abbrev=0 2>/dev/null || echo "dev")
+# Strip the `v` prefix from git tags so local builds match what
+# `docker/metadata-action`'s `type=semver,pattern={{version}}` publishes
+# (e.g. tag v0.0.18 -> image :0.0.18, never :v0.0.18). `dev` fallback
+# stays unprefixed in shallow CI clones.
+RAW_TAG        := $(shell git describe --tags --abbrev=0 2>/dev/null || echo dev)
+CURRENTTAG     := $(RAW_TAG:v%=%)
 LOCAL_BIN      := $(HOME)/.local/bin
 MISE_DATA_DIR  := $(HOME)/.local/share/mise
 
