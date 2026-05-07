@@ -40,7 +40,7 @@ jobs:
 
       - name: Detect code changes
         id: filter
-        uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
+        uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
         with:
           # `base` is ignored on pull_request events — leave empty there.
           base: ${{ github.event_name == 'push' && 'main' || '' }}
