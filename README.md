@@ -177,7 +177,7 @@ make image-build         # dev image (Node alpine + pnpm dev server)
 make image-build-prod    # production image (Caddy 2 on 8080)
 ```
 
-The production Dockerfile is multi-stage: `node:24.16.0-alpine` builder → `caddy:2.11.3-alpine`. Both Dockerfiles use `pnpm install --frozen-lockfile`, pin base images by SHA256 digest, and copy lockfiles before source for layer caching. The final image runs as non-root (UID 1000); the build adds `gettext` (for `envsubst`) and strips `cap_net_bind_service` from `/usr/bin/caddy` so the binary execs cleanly under `securityContext.capabilities.drop:[ALL]` in K8s.
+The production Dockerfile is three-stage: `node:24.16.0-alpine` builder → `caddy:2.11.3-builder-alpine` (runs `xcaddy build v2.11.3 --replace github.com/go-jose/go-jose/v3=…@v3.0.5` to rebuild Caddy with the CVE-2026-34986 fix — Caddy 2.11.3 still pins the vulnerable go-jose v3.0.4 as an indirect dep, and no newer Caddy release carries the bump yet) → `caddy:2.11.3-alpine` runtime, with the rebuilt binary copied over the bundled one. Both Dockerfiles use `pnpm install --frozen-lockfile`, pin base images by SHA256 digest, and copy lockfiles before source for layer caching. The final image runs as non-root (UID 1000); the build adds `gettext` (for `envsubst`) and strips `cap_net_bind_service` from `/usr/bin/caddy` so the binary execs cleanly under `securityContext.capabilities.drop:[ALL]` in K8s.
 
 ## Deployment
 
