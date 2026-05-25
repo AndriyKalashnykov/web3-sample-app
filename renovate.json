@@ -90,6 +90,12 @@
       "matchManagers": ["mise", "custom.regex"],
       "matchDatasources": ["github-releases", "github-tags", "npm", "go", "pypi"],
       "groupName": "mise & Makefile tools"
+    },
+    {
+      "description": "Group pnpm bumps across managers. pnpm is mirrored in .mise.toml (mise manager) and in package.json#packageManager (npm manager). Without this rule, an upstream pnpm release opens two PRs whose CI green-states are independent — either can land alone, drifting the two pins. Single-group merge keeps them aligned. Placed AFTER the mise-and-Makefile group so this rule's groupName wins for pnpm specifically (later rules override earlier ones for the same property).",
+      "matchManagers": ["mise", "npm"],
+      "matchPackageNames": ["pnpm"],
+      "groupName": "pnpm"
     }
   ]
 }
