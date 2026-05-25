@@ -16,7 +16,7 @@ MISE_DATA_DIR  := $(HOME)/.local/share/mise
 export PATH := $(MISE_DATA_DIR)/shims:$(LOCAL_BIN):$(PATH)
 
 # renovate: datasource=docker depName=minlag/mermaid-cli
-MERMAID_CLI_VERSION := 11.14.0
+MERMAID_CLI_VERSION := 11.15.0
 
 # Bumped together with aqua:kubernetes-sigs/kind in .mise.toml — see KinD
 # release notes for the matching node image. Not independently trackable.

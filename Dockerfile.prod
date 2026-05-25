@@ -1,10 +1,10 @@
 # https://hub.docker.com/_/node/tags
-FROM node:24.15.0-alpine@sha256:8e2c930fda481a6ec141fe5a88e8c249c69f8102fe98af505f38c081649ea749 AS builder
+FROM node:24.16.0-alpine@sha256:2bdb65ed1dab192432bc31c95f94155ca5ad7fc1392fb7eb7526ab682fa5bf14 AS builder
 RUN apk --no-cache add git
 RUN corepack enable pnpm
 
 WORKDIR /app
-COPY package.json pnpm-lock.yaml .npmrc ./
+COPY package.json pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile
 COPY . .
 
@@ -16,7 +16,7 @@ COPY . .
 RUN pnpm build && mv dist/config.js dist/config.js.template
 
 # https://hub.docker.com/r/nginxinc/nginx-unprivileged/tags
-FROM nginxinc/nginx-unprivileged:1.30.0-alpine@sha256:3edc5c2de0338c1416dd9dd826c8f76a42bcb4a9d51ab6ff8af227b424be5766 AS server
+FROM nginxinc/nginx-unprivileged:1.30.1-alpine@sha256:acc3239879a65d9e3d250b21847ec3f34f33367017394d22830242af15cf1cb0 AS server
 
 # chown /usr/share/nginx/html — the base image ships it as root:root with
 # a stock index.html. start-nginx.sh's envsubst writes a new index.html at
