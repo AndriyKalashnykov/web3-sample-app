@@ -4,10 +4,10 @@
  *
  * Production flow:
  *   1. Container starts.
- *   2. start-nginx.sh runs `envsubst` against `index.html.template`,
- *      writing real env values into the inline `window.__CONFIG__` script.
- *   3. Browser loads index.html → `window.__CONFIG__` is populated before
- *      any module code runs.
+ *   2. start-caddy.sh runs `envsubst` against `config.js.template`,
+ *      writing real env values into `/srv/config.js`.
+ *   3. Browser loads index.html, which loads `<script src="/config.js">`;
+ *      `window.__CONFIG__` is populated before any module code runs.
  *   4. This file reads from `window.__CONFIG__` and exposes a typed object.
  *
  * Local dev / unit tests:

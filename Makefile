@@ -240,7 +240,7 @@ image-stop:
 docker-smoke-test: image-build-prod
 	@docker rm -f $(APP_NAME)-smoke 2>/dev/null || true
 	@docker run -d --name=$(APP_NAME)-smoke -p 8080:8080 $(APP_NAME):$(CURRENTTAG) >/dev/null
-	@echo "Waiting for nginx /internal/isalive ..."
+	@echo "Waiting for Caddy /internal/isalive ..."
 	@end=$$(( $$(date +%s) + 30 )); ok=1; \
 	while [ $$(date +%s) -lt $$end ]; do \
 		if curl -fsS http://localhost:8080/internal/isalive >/dev/null 2>&1; then ok=0; break; fi; \
@@ -252,7 +252,7 @@ docker-smoke-test: image-build-prod
 		docker rm -f $(APP_NAME)-smoke >/dev/null; \
 		exit 1; \
 	fi; \
-	echo "PASS: $(APP_NAME) container booted nginx successfully"
+	echo "PASS: $(APP_NAME) container booted Caddy successfully"
 
 #dast-scan: @ Run OWASP ZAP baseline against an already-running smoke container on :8080 (CI gate)
 dast-scan:

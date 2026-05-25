@@ -1,4 +1,4 @@
-// Pattern C runtime config. In production, start-nginx.sh runs envsubst
+// Pattern C runtime config. In production, start-caddy.sh runs envsubst
 // over `config.js.template` (this file, renamed in Dockerfile.prod) and
 // writes the substituted output to /config.js at container start. The
 // SPA loads it via <script src="/config.js"> in index.html. Loaded as

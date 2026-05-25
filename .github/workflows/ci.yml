@@ -272,12 +272,12 @@ jobs:
           end=$(( "$(date +%s)" + 30 ))
           while [ "$(date +%s)" -lt $end ]; do
             if curl -fsS http://localhost:8080/internal/isalive >/dev/null 2>&1; then
-              echo "PASS: nginx booted and serving"
+              echo "PASS: Caddy booted and serving"
               exit 0
             fi
             sleep 1
           done
-          echo "FAIL: nginx did not become ready within 30s"
+          echo "FAIL: Caddy did not become ready within 30s"
           docker logs web3-sample-app-smoke
           exit 1
 

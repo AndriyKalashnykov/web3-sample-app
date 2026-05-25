@@ -1,0 +1,106 @@
+# Caddy 2 configuration for the production SPA image.
+#
+# Replaces the prior nginx/nginx.conf + nginx/security-headers.conf pair.
+# Caddy applies `header` blocks via response middleware (the `defer`
+# subdirective ensures they're written even when an inner handler also
+# manipulates headers) — so we don't need the nginx-style "re-include
+# the security-headers partial inside every location that calls
+# add_header" workaround.
+#
+# Contract (mirrors the e2e test assertions in e2e/e2e-test.sh):
+#   GET /internal/isalive   -> 200, text/plain, body "ALIVE\n"
+#   GET /internal/isready   -> 200, text/plain, body "READY\n"
+#   GET /publicnode         -> 307, Location: https://ethereum-rpc.publicnode.com
+#   GET /config.js          -> 200, no-store, full security-header set
+#   GET /assets/<missing>   -> 404 (NEVER SPA-fallback; would silently mask
+#                              missing-asset bugs in production)
+#   GET / and any unknown   -> SPA fallback to /index.html (no-cache)
+#   GET / index.html script-tag includes <script src="/config.js"></script>
+
+{
+	# Static-serve only: no admin API, no ACME, no config persistence.
+	# Eliminates the need for writable /data and /config volumes and lets
+	# the container run fully non-root with a read-only root filesystem.
+	admin off
+	auto_https off
+	persist_config off
+
+	# JSON-style access log to stdout (kubectl logs / docker logs friendly).
+	log {
+		output stdout
+		format console
+	}
+}
+
+:8080 {
+	# ----- Security headers — applied to every response -----
+	# `defer` makes Caddy emit these AFTER the inner handler runs, so they
+	# survive even when a handler also calls `header` (matches nginx's
+	# server-scope add_header inheritance, but inverted — defer-emit
+	# instead of re-include-the-partial).
+	header {
+		defer
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Cross-Origin-Opener-Policy "same-origin"
+		Cross-Origin-Resource-Policy "same-origin"
+		Permissions-Policy "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()"
+		# CSP: connect-src allows any HTTPS endpoint so VITE_RPCENDPOINT
+		# can be overridden per environment without rewriting the policy.
+		# style-src 'unsafe-inline' is required because MUI/emotion inject
+		# runtime styles. COEP=require-corp is intentionally NOT set — it
+		# would block the cross-origin RPC fetch since the public RPC
+		# endpoint doesn't ship Cross-Origin-Resource-Policy.
+		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self' https:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+		# Drop the "Server: Caddy" header (matches nginx's `server_tokens off`).
+		-Server
+	}
+
+	# ----- Health probes — plain text, no access log noise -----
+	handle /internal/isalive {
+		log_skip
+		header Content-Type "text/plain"
+		respond "ALIVE\n" 200
+	}
+	handle /internal/isready {
+		log_skip
+		header Content-Type "text/plain"
+		respond "READY\n" 200
+	}
+
+	# ----- Convenience redirect to the default public RPC endpoint -----
+	handle /publicnode {
+		redir https://ethereum-rpc.publicnode.com 307
+	}
+
+	# ----- Runtime config (Pattern C) — never cache; env-substituted at
+	# container start by start-caddy.sh's envsubst pass over
+	# /srv/config.js.template -> /srv/config.js.
+	handle /config.js {
+		header Cache-Control "no-store"
+		root * /srv
+		file_server
+	}
+
+	# ----- Hashed build assets — long cache, 404 if missing.
+	# Critically, this MUST NOT SPA-fallback: a missing /assets/foo.js
+	# returning index.html would be silently parsed as JS by the browser
+	# and mask the real "asset went missing post-build" bug.
+	handle /assets/* {
+		header Cache-Control "public, max-age=31536000, immutable"
+		root * /srv
+		file_server
+	}
+
+	# ----- SPA root — serve the file if it exists, otherwise index.html.
+	# `try_files {path} /index.html` matches nginx's `try_files $uri
+	# /index.html`. Cache-Control: no-cache means contributors can't ship
+	# a stale HTML wrapper after a deploy.
+	handle {
+		header Cache-Control "no-cache"
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+}

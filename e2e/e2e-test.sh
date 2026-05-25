@@ -55,7 +55,10 @@ assert_redirect_target() {
 assert_header_present() {
   # Asserts that an HTTP response header is present and matches a regex.
   # Catches the "header silently dropped because a `location` block defined
-  # its own `add_header`" failure mode that nginx.conf explicitly warns about.
+  # its own `add_header`/`header`" failure mode that the web-server config
+  # (Caddy `header { defer }` today, nginx server-scope add_header previously)
+  # is meant to prevent — but a future handler that bypasses `defer` could
+  # silently shadow these. Assert at the wire.
   local url="$1" header="$2" pattern="$3"
   local value
   value=$(curl -sI "$url" \
@@ -76,7 +79,7 @@ assert_header_present() {
 }
 
 assert_runtime_config_substituted() {
-  # Pattern C: start-nginx.sh runs envsubst on config.js.template at container
+  # Pattern C: start-caddy.sh runs envsubst on config.js.template at container
   # start, producing /config.js with `window.__CONFIG__.VITE_RPCENDPOINT` set
   # to the real RPC URL from container env. Verify the file is reachable and
   # the placeholder was replaced (no literal `${VAR}`).
@@ -109,7 +112,7 @@ assert_runtime_config_substituted() {
 
 echo "=== E2E suite against $BASE (expecting RPC=$EXPECTED_RPC injected into index.html) ==="
 
-# Health probes (nginx custom routes)
+# Health probes (Caddy custom routes)
 assert_status GET "$BASE/internal/isalive" 200
 assert_status GET "$BASE/internal/isready" 200
 assert_body_contains "$BASE/internal/isalive" "ALIVE"
@@ -127,25 +130,26 @@ assert_body_contains "$BASE/some/unknown/route" '<div id="root">'
 # Asset pipeline — missing asset under /assets/ should 404 (no SPA fallback there)
 assert_status GET "$BASE/assets/does-not-exist.js" 404
 
-# Public RPC redirect (nginx /publicnode -> 307 to public RPC)
+# Public RPC redirect (Caddy /publicnode -> 307 to public RPC)
 assert_redirect_target "$BASE/publicnode" 307 "ethereum-rpc.publicnode.com"
 
 # Pattern C runtime config — VITE_RPCENDPOINT must be substituted into the
-# inline window.__CONFIG__ script in /index.html by start-nginx.sh's envsubst
+# external /config.js loaded by index.html, written by start-caddy.sh's envsubst
 # pass. If the placeholder is still literal, container startup is broken.
 assert_runtime_config_substituted "$EXPECTED_RPC"
 
 # index.html must reference /config.js as an external script — proves the
 # init container's seed-html step copied the bundled HTML into the writable
-# emptyDir before nginx booted (otherwise the served index would be either
+# emptyDir before Caddy booted (otherwise the served index would be either
 # 404 or the bare unsubstituted template). This is the only assertion that
 # distinguishes "config.js exists at the right path" from "the SPA actually
 # loads it on every page render".
 assert_body_contains "$BASE/" '<script src="/config.js"></script>'
 
 # Security headers must reach the client on the SPA root AND on /config.js.
-# nginx.conf sets these `always`, but a future location-block change that
-# adds its own `add_header` would silently shadow them — assert at the wire.
+# The Caddyfile's `header { defer ... }` sets these for every response, but a
+# future handler that calls `header` without `defer` could silently shadow
+# them — assert at the wire.
 for path in "/" "/config.js"; do
   assert_header_present "$BASE$path" 'Content-Security-Policy'  "default-src 'self'"
   assert_header_present "$BASE$path" 'X-Frame-Options'          'DENY'
