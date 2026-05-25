@@ -124,7 +124,7 @@ The `docker` job in `ci.yml` ships images on tag pushes; on non-tag pushes it ru
 ## Docker
 
 - **Dockerfile**: Dev image (Node alpine + pnpm dev server on port 8080); `corepack enable pnpm` (no `npm install -g`). See `Dockerfile` for the pinned base image digest.
-- **Dockerfile.prod**: Multi-stage build (Node alpine builder → `caddy:2.11.3-alpine` on port 8080, non-root `USER 1000:1000`); installs `gettext` so `start-caddy.sh` can `envsubst` the runtime config; OCI labels (artifacthub, vendor, license) baked in via `LABEL` instructions; both stages pin base images by SHA256 digest. See `Dockerfile.prod` for the pinned tags.
+- **Dockerfile.prod**: Three-stage build — (1) `node:24-alpine` builder produces the Vite bundle; (2) `caddy:2.11.3-builder-alpine` runs `xcaddy build v2.11.3 --replace github.com/go-jose/go-jose/v3=…@v3.0.5` to rebuild Caddy with the CVE-2026-34986 fix (transitive Go JOSE DoS — Caddy 2.11.3 ships v3.0.4; v3.0.5 has the patch but no Caddy release carries it yet); (3) `caddy:2.11.3-alpine` runtime, with the rebuilt binary copied in over the bundled one, `gettext` added for `start-caddy.sh`'s envsubst pass, `cap_net_bind_service` stripped from `/usr/bin/caddy` (so the binary execs cleanly under K8s `capabilities.drop:[ALL]`), non-root `USER 1000:1000`. All three stages pin base images by SHA256 digest. OCI labels (artifacthub, vendor, license) on the runtime stage. See `Dockerfile.prod` for the pinned tags.
 - **`packageManager` field** in `package.json` pins pnpm so corepack uses the project-declared version.
 - **`.dockerignore`**: Excludes `node_modules`, `dist`, `.git`, `e2e`, `zap-output`, `playwright-report`, `test-results`, `.env`.
 - **`.hadolint.yaml`**: Configures hadolint rule ignores for Dockerfile linting.
