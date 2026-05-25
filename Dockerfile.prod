@@ -8,32 +8,39 @@ COPY package.json pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile
 COPY . .
 
-# Pattern C: runtime config is injected by start-nginx.sh's envsubst pass
-# against `index.html.template` (which contains `${VITE_RPCENDPOINT}` etc.
-# inside an inline `window.__CONFIG__` script). No env-var baking required
-# — Vite simply emits index.html as-is with the placeholders. Build is
-# fully environment-agnostic.
+# Pattern C: runtime config is injected by start-caddy.sh's envsubst pass
+# against `config.js.template` (renamed from public/config.js at build
+# time). No env-var baking required — Vite emits index.html as-is with
+# the placeholders. Build is fully environment-agnostic.
 RUN pnpm build && mv dist/config.js dist/config.js.template
 
-# https://hub.docker.com/r/nginxinc/nginx-unprivileged/tags
-FROM nginxinc/nginx-unprivileged:1.30.1-alpine@sha256:acc3239879a65d9e3d250b21847ec3f34f33367017394d22830242af15cf1cb0 AS server
+# https://hub.docker.com/_/caddy/tags
+FROM caddy:2.11.3-alpine@sha256:86deaf5e3d3408a6ccec08fbb79989783dd26e206ae10bcf78a801dc8c9ab794 AS server
 
-# chown /usr/share/nginx/html — the base image ships it as root:root with
-# a stock index.html. start-nginx.sh's envsubst writes a new index.html at
-# runtime as UID 101, which fails on a root-owned directory. The COPY
-# --chown below only affects copied entries, not the destination directory
-# itself, so we chown explicitly here. Removing the base image's stock
-# index.html in the same step keeps the layer minimal.
-#
-# A previous `apk upgrade` step was retired 2026-05-07 — nginx-unprivileged
-# 1.30.0-alpine ships zlib-1.3.2-r0 (the CVE-2026-22184 fix that the apk
-# upgrade was originally added to backport) and Trivy scans the base image
-# at 0 HIGH/CRITICAL. Renovate keeps the base image current; the CI Trivy
-# image-scan gate catches any post-bake CVEs.
+# Caddy's official image runs as root by default and ships a `caddy` binary
+# at /usr/bin/caddy with the default working dir /srv (its conventional
+# static root). We add `gettext` (which provides envsubst) for Pattern C
+# config injection, then drop to a non-root UID for runtime.
 USER root
-RUN rm -f /usr/share/nginx/html/index.html \
- && chown -R nginx:nginx /usr/share/nginx/html
-USER 101
+# - `gettext` provides `envsubst` for Pattern C config injection.
+# - `libcap` provides `setcap`, used to strip the `cap_net_bind_service=ep`
+#   file capability from `/usr/bin/caddy`. The Caddy image ships that file
+#   cap so the binary can bind ports <1024 when running as a non-root
+#   user. Our deployment binds :8080 and runs under Kubernetes with
+#   `securityContext.capabilities.drop: [ALL]`; that combination makes
+#   the kernel reject `execve` with EPERM ("Operation not permitted")
+#   because the file-cap cannot be granted into an empty capability set.
+#   Stripping the cap from the binary lets the same image run under
+#   both Docker (`make docker-smoke-test`) AND a hardened K8s
+#   securityContext (`k8s/deployment.yaml`). We delete `libcap` after
+#   use to keep the runtime image lean.
+RUN apk --no-cache add gettext libcap \
+ && setcap -r /usr/bin/caddy \
+ && apk --no-cache del libcap \
+ && addgroup -g 1000 -S app \
+ && adduser -u 1000 -S app -G app \
+ && mkdir -p /srv \
+ && chown -R 1000:1000 /srv /etc/caddy
 
 LABEL org.opencontainers.image.title="Web3 Sample App" \
       org.opencontainers.image.description="Web3 Sample App — React SPA querying Ethereum balances" \
@@ -43,9 +50,16 @@ LABEL org.opencontainers.image.title="Web3 Sample App" \
       io.artifacthub.package.maintainers='[{"name":"Andriy Kalashnykov","email":"andriykalashnykov@gmail.com"}]' \
       io.artifacthub.package.license="MIT"
 
-COPY --from=builder --chown=nginx:nginx ./app/nginx/nginx.conf /etc/nginx/conf.d/default.conf
-COPY --from=builder --chown=nginx:nginx ./app/nginx/security-headers.conf /etc/nginx/conf.d/security-headers.conf
-COPY --from=builder --chown=nginx:nginx ./app/dist /usr/share/nginx/html
+COPY --from=builder --chown=1000:1000 ./app/caddy/Caddyfile /etc/caddy/Caddyfile
+COPY --from=builder --chown=1000:1000 ./app/dist /srv
+COPY --from=builder --chown=1000:1000 ./app/start-caddy.sh /usr/local/bin/start-caddy.sh
+
+# Drop to non-root for runtime. Caddy with admin off / auto_https off /
+# persist_config off needs no writable state directories — /srv (where
+# start-caddy.sh writes config.js) is the only path that needs write
+# access, and it's already chown'd to UID 1000 above. /tmp is provided
+# by the deployment's emptyDir mount.
+USER 1000:1000
+WORKDIR /srv
 EXPOSE 8080
-COPY --from=builder --chown=nginx:nginx ./app/start-nginx.sh /usr/local/bin/start-nginx.sh
-ENTRYPOINT ["sh","/usr/local/bin/start-nginx.sh"]
+ENTRYPOINT ["sh","/usr/local/bin/start-caddy.sh"]

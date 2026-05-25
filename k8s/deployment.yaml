@@ -21,16 +21,17 @@ spec:
       automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
-        runAsUser: 101
-        runAsGroup: 101
-        fsGroup: 101
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
         seccompProfile:
           type: RuntimeDefault
-      # readOnlyRootFilesystem on the main container blocks start-nginx.sh's
-      # envsubst write to /usr/share/nginx/html/assets/. The init container
-      # seeds a writable emptyDir with the baked HTML; the main container
-      # mounts that emptyDir over /usr/share/nginx/html so start-nginx.sh
-      # can rewrite the bundled JS at startup.
+      # readOnlyRootFilesystem on the main container blocks start-caddy.sh's
+      # envsubst write to /srv/config.js. The init container seeds a writable
+      # emptyDir with the baked SPA bundle; the main container mounts that
+      # emptyDir over /srv so start-caddy.sh can rewrite config.js at startup.
+      # Caddy itself (with admin off / auto_https off / persist_config off)
+      # needs no writable state directories beyond /srv and /tmp.
       initContainers:
         - name: seed-html
           image: ghcr.io/andriykalashnykov/web3-sample-app:0.0.18
@@ -38,9 +39,9 @@ spec:
           command:
             - sh
             - -c
-            - cp -R /usr/share/nginx/html/. /work/
+            - cp -R /srv/. /work/
           volumeMounts:
-            - name: nginx-html
+            - name: static-html
               mountPath: /work
           securityContext:
             allowPrivilegeEscalation: false
@@ -68,12 +69,10 @@ spec:
               containerPort: 8080
               protocol: TCP
           volumeMounts:
-            - name: nginx-html
-              mountPath: /usr/share/nginx/html
+            - name: static-html
+              mountPath: /srv
             - name: tmp
               mountPath: /tmp
-            - name: nginx-cache
-              mountPath: /var/cache/nginx
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -106,9 +105,7 @@ spec:
             periodSeconds: 5
             timeoutSeconds: 2
       volumes:
-        - name: nginx-html
+        - name: static-html
           emptyDir: {}
         - name: tmp
-          emptyDir: {}
-        - name: nginx-cache
           emptyDir: {}

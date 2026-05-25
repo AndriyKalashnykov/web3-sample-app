@@ -7,7 +7,7 @@ metadata:
     app.kubernetes.io/component: config
 data:
   # Mirrors .env / .env.example for the SPA. Values are envsubst'd into the
-  # built JS by start-nginx.sh at pod startup (see Dockerfile.prod).
+  # built JS by start-caddy.sh at pod startup (see Dockerfile.prod).
   VITE_RPCENDPOINT: https://ethereum-rpc.publicnode.com
   VITE_BASE_URL: /api/
   PORT: "8080"

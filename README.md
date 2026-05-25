@@ -5,14 +5,14 @@
 
 # Web3 Sample App
 
-Reference React SPA that queries ETH and DAI ERC-20 balances from the Ethereum blockchain via viem, packaged as a non-root nginx container and deployable to Kubernetes.
+Reference React SPA that queries ETH and DAI ERC-20 balances from the Ethereum blockchain via viem, packaged as a non-root Caddy container and deployable to Kubernetes.
 
 ```mermaid
 C4Context
     title System Context — Web3 Sample App
 
     Person(user, "End User", "Browser, supplies an Ethereum address")
-    System(spa, "Web3 Sample App", "React 19 SPA, viem 2, nginx-served")
+    System(spa, "Web3 Sample App", "React 19 SPA, viem 2, Caddy 2-served")
     System_Ext(rpc, "Ethereum JSON-RPC", "viem PublicClient, mainnet, http transport via VITE_RPCENDPOINT")
     System_Ext(dai, "DAI ERC-20 Contract", "0x6B17…1d0F on Ethereum mainnet")
 
@@ -31,7 +31,7 @@ C4Context
 | Web3 | viem 2 (`createPublicClient`, `http`, `readContract`, `parseAbi`) |
 | i18n | i18next + react-i18next (English bundled) |
 | Testing | Vitest 4, React Testing Library, jsdom, Playwright (Chromium) |
-| Container | Builder: `node:24.15.0-alpine`; runtime: `nginxinc/nginx-unprivileged:1.30.0-alpine` (port 8080, runs as UID 101) |
+| Container | Builder: `node:24.16.0-alpine`; runtime: `caddy:2.11.3-alpine` (port 8080, runs as UID 1000; `cap_net_bind_service` stripped from the binary so it execs cleanly under `securityContext.capabilities.drop:[ALL]`) |
 | Orchestration | Kubernetes (manifests under `k8s/`); local KinD via Makefile |
 | CI/CD | GitHub Actions, Renovate (platform automerge) |
 | Code quality | Prettier, hadolint, Trivy (fs+config), gitleaks |
@@ -61,7 +61,7 @@ make run        # start dev server, then open http://localhost:8080
 
 ## Architecture
 
-The SPA is a single React app served from a static nginx image. All blockchain calls happen in the browser against an external JSON-RPC endpoint configured at deploy time. There is no backend.
+The SPA is a single React app served from a static Caddy 2 image. All blockchain calls happen in the browser against an external JSON-RPC endpoint configured at deploy time. There is no backend.
 
 ### Entry flow
 
@@ -72,7 +72,7 @@ The SPA is a single React app served from a static nginx image. All blockchain c
 
 ### Runtime env-var injection (Pattern C)
 
-`Dockerfile.prod` is environment-agnostic — `public/config.js` carries `window.__CONFIG__ = { VITE_RPCENDPOINT: "${VITE_RPCENDPOINT}", VITE_BASE_URL: "${VITE_BASE_URL}" }` with literal placeholders. Vite copies it to `dist/config.js`; the build renames it to `dist/config.js.template`. At container startup, `start-nginx.sh` runs `envsubst` against that single template (restricted to `$VITE_RPCENDPOINT $VITE_BASE_URL`) and writes the result to `/config.js`. `index.html` loads it via `<script src="/config.js"></script>`. The SPA reads `window.__CONFIG__` via `src/config.ts`, which falls through to `import.meta.env` when the placeholders are still literal (i.e. `pnpm dev`). **External file, not inline**: nginx CSP is `script-src 'self'`, which forbids inline scripts without a per-deploy nonce/hash; `/config.js` under `/` is allowed by `'self'` without weakening CSP. nginx serves it with `Cache-Control: no-store` so deploys pick up new values immediately. The K8s `ConfigMap` in `k8s/cm.yaml` provides the runtime values in cluster — see [`src/config.ts`](src/config.ts), [`public/config.js`](public/config.js), and [`start-nginx.sh`](start-nginx.sh).
+`Dockerfile.prod` is environment-agnostic — `public/config.js` carries `window.__CONFIG__ = { VITE_RPCENDPOINT: "${VITE_RPCENDPOINT}", VITE_BASE_URL: "${VITE_BASE_URL}" }` with literal placeholders. Vite copies it to `dist/config.js`; the build renames it to `dist/config.js.template`. At container startup, `start-caddy.sh` runs `envsubst` against that single template (restricted to `$VITE_RPCENDPOINT $VITE_BASE_URL`) and writes the result to `/srv/config.js`. `index.html` loads it via `<script src="/config.js"></script>`. The SPA reads `window.__CONFIG__` via `src/config.ts`, which falls through to `import.meta.env` when the placeholders are still literal (i.e. `pnpm dev`). **External file, not inline**: the Caddyfile sets CSP `script-src 'self'`, which forbids inline scripts without a per-deploy nonce/hash; `/config.js` under `/` is allowed by `'self'` without weakening CSP. The `handle /config.js` block sets `Cache-Control: no-store` so deploys pick up new values immediately. The K8s `ConfigMap` in `k8s/cm.yaml` provides the runtime values in cluster — see [`src/config.ts`](src/config.ts), [`public/config.js`](public/config.js), and [`start-caddy.sh`](start-caddy.sh).
 
 ### Path alias
 
@@ -125,7 +125,7 @@ C4Deployment
     Deployment_Node(cluster, "KinD cluster (namespace: web3)", "kindest/node") {
       Deployment_Node(pod, "Pod (Deployment, replicas=1)") {
         Container(init, "seed-html (init)", "Copies bundled assets + index.html + config.js.template into writable emptyDir")
-        Container(nginx, "web3-sample-app", "nginx-unprivileged on :8080; envsubst /config.js at boot")
+        Container(caddy, "web3-sample-app", "Caddy 2 on :8080; envsubst /config.js at boot")
       }
       ContainerDb(cm, "ConfigMap", "web3-sample-app-config: VITE_RPCENDPOINT, VITE_BASE_URL, PORT")
       Container(svc, "K8s Service", "type: LoadBalancer, port 8080 → pod :8080")
@@ -136,12 +136,12 @@ C4Deployment
 
   Rel(user, envoy, "HTTP", "to LB IP:8080")
   Rel(envoy, svc, "Routes to")
-  Rel(svc, nginx, "Routes to")
-  Rel(nginx, cm, "Reads env from", "envFrom")
-  Rel(nginx, rpc, "JSON-RPC", "via window.__CONFIG__")
+  Rel(svc, caddy, "Routes to")
+  Rel(caddy, cm, "Reads env from", "envFrom")
+  Rel(caddy, rpc, "JSON-RPC", "via window.__CONFIG__")
 ```
 
-The `seed-html` init container copies the baked SPA bundle (`assets/`, `index.html`, and `config.js.template`) from the read-only image filesystem into a writable `emptyDir` mounted at `/usr/share/nginx/html`. The main container's `start-nginx.sh` then runs `envsubst` against `config.js.template` only (variables restricted to `$VITE_RPCENDPOINT $VITE_BASE_URL`) and writes the result to `/config.js`. The SPA reads the substituted values via `window.__CONFIG__` at boot. The `assets/` JS bundles AND `index.html` are byte-identical across environments, so consumers can verify by digest and Trivy/Cosign signatures stay consistent. This is what makes "build once, configure at deploy time" work despite `readOnlyRootFilesystem: true` on the main container — and the initContainer image MUST stay in lockstep with the main container image (both are patched to the same tag by `kind-deploy` via `KIND_IMAGE_PATCH`).
+The `seed-html` init container copies the baked SPA bundle (`assets/`, `index.html`, and `config.js.template`) from the read-only image filesystem into a writable `emptyDir` mounted at `/srv`. The main container's `start-caddy.sh` then runs `envsubst` against `config.js.template` only (variables restricted to `$VITE_RPCENDPOINT $VITE_BASE_URL`) and writes the result to `/srv/config.js`. The SPA reads the substituted values via `window.__CONFIG__` at boot. The `assets/` JS bundles AND `index.html` are byte-identical across environments, so consumers can verify by digest and Trivy/Cosign signatures stay consistent. This is what makes "build once, configure at deploy time" work despite `readOnlyRootFilesystem: true` on the main container — and the initContainer image MUST stay in lockstep with the main container image (both are patched to the same tag by `kind-deploy` via `KIND_IMAGE_PATCH`).
 
 ## Testing
 
@@ -151,7 +151,7 @@ Four test layers, each with its own Makefile target, config, and CI job:
 |-------|--------|-------|---------------|----------------|
 | Unit + Component | `make test` | `src/store/models/__tests__/`, `src/service/ether/__tests__/ether.test.ts`, `src/components/__tests__/` | jsdom (vitest, in-process) | Pure functions, Redux slices, mocked ether service, components rendered via `renderWithProviders` |
 | Integration | `make integration-test` | `src/service/ether/__tests__/ether.integration.test.ts` | node (vitest, real network) | Ether service against the real `VITE_RPCENDPOINT` (block fetch, ETH/DAI balance, malformed-input negatives) |
-| E2E — HTTP | `make e2e` | `e2e/e2e-test.sh` | KinD + cloud-provider-kind LoadBalancer | nginx routes (`/internal/isalive`, `/internal/isready`, `/publicnode` → 307, SPA fallback, missing asset 404) + verifies `start-nginx.sh` substituted `VITE_RPCENDPOINT` into served `/config.js` |
+| E2E — HTTP | `make e2e` | `e2e/e2e-test.sh` | KinD + cloud-provider-kind LoadBalancer | Caddy routes (`/internal/isalive`, `/internal/isready`, `/publicnode` → 307, SPA fallback, missing asset 404) + verifies `start-caddy.sh` substituted `VITE_RPCENDPOINT` into served `/config.js` |
 | E2E — Browser | `make e2e-browser` | `e2e/playwright.config.ts`, `e2e/account-form.spec.ts` | KinD + cloud-provider-kind + Playwright Chromium | AccountForm renders + real RPC roundtrip updates the displayed block number — gated in CI as the only layer that catches CSP violations and runtime SPA errors |
 
 ```bash
@@ -159,7 +159,7 @@ make test               # unit + component (~1s)
 make test-watch         # watch mode
 make test-coverage      # coverage report
 make integration-test   # real-RPC integration (~5s, needs outbound HTTPS)
-make e2e                # full HTTP suite against deployed nginx (~30s)
+make e2e                # full HTTP suite against deployed Caddy (~30s)
 make e2e-browser        # Playwright browser e2e (~45s)
 ```
 
@@ -174,10 +174,10 @@ A valid Ethereum address for manual UI testing:
 ```bash
 make build               # production bundle to ./dist
 make image-build         # dev image (Node alpine + pnpm dev server)
-make image-build-prod    # production image (nginx-unprivileged on 8080)
+make image-build-prod    # production image (Caddy 2 on 8080)
 ```
 
-The production Dockerfile is multi-stage: `node:24.15.0-alpine` builder → `nginxinc/nginx-unprivileged:1.30.0-alpine`. Both Dockerfiles use `pnpm install --frozen-lockfile`, pin base images by SHA256 digest, and copy lockfiles before source for layer caching. The final image runs as non-root (UID 101) with `corepack`-provided pnpm.
+The production Dockerfile is multi-stage: `node:24.16.0-alpine` builder → `caddy:2.11.3-alpine`. Both Dockerfiles use `pnpm install --frozen-lockfile`, pin base images by SHA256 digest, and copy lockfiles before source for layer caching. The final image runs as non-root (UID 1000); the build adds `gettext` (for `envsubst`) and strips `cap_net_bind_service` from `/usr/bin/caddy` so the binary execs cleanly under `securityContext.capabilities.drop:[ALL]` in K8s.
 
 ## Deployment
 
@@ -226,7 +226,7 @@ xdg-open "http://${service_ip}:8080"
 kubectl delete -f ./k8s --namespace=web3
 ```
 
-The K8s ConfigMap (`k8s/cm.yaml`) provides `VITE_RPCENDPOINT` to the running pod; `start-nginx.sh` substitutes it into `/config.js` at container startup (Pattern C — see [Runtime env-var injection](#runtime-env-var-injection-pattern-c)).
+The K8s ConfigMap (`k8s/cm.yaml`) provides `VITE_RPCENDPOINT` to the running pod; `start-caddy.sh` substitutes it into `/config.js` at container startup (Pattern C — see [Runtime env-var injection](#runtime-env-var-injection-pattern-c)).
 
 ## Available Make Targets
 
@@ -349,7 +349,7 @@ The `docker` job runs the following gates **before** any image is pushed to GHCR
 |---|------|---------|------|
 | 1 | Build single-arch image (`load: true`, linux/amd64) | Build regressions on the runner architecture | `docker/build-push-action` |
 | 2 | **Trivy image scan** (CRITICAL/HIGH blocking) | CVEs in base image, OS packages, build layers, secrets, misconfigs | `aquasecurity/trivy-action` |
-| 3 | **Smoke test** | nginx fails to boot or `/internal/isalive` doesn't respond | `docker run` + `curl` |
+| 3 | **Smoke test** | Caddy fails to boot or `/internal/isalive` doesn't respond | `docker run` + `curl` |
 | 4 | Multi-arch build + push (`linux/amd64,linux/arm64`) | Publishes for both architectures with `cache-from: type=gha` (~95% cache hit from Gate 1) | `docker/build-push-action` |
 | 5 | **Cosign keyless OIDC signing** | Sigstore signature on the manifest digest (Rekor transparency log) | `sigstore/cosign-installer` + `cosign sign --yes <tag>@<digest>` |
 
