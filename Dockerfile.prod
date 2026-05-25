@@ -15,13 +15,26 @@ COPY . .
 RUN pnpm build && mv dist/config.js dist/config.js.template
 
 # https://hub.docker.com/_/caddy/tags
+# Builder stage: rebuild Caddy with go-jose v3 bumped past CVE-2026-34986.
+# Caddy 2.11.3 (latest stable as of 2026-05-12) pins `github.com/go-jose/
+# go-jose/v3 v3.0.4` as an indirect dep; v3.0.5 ships the fix (Go JOSE
+# DoS via crafted JWE). Until a newer Caddy releases with the bumped
+# dep, `xcaddy --replace` produces a functionally-identical binary with
+# the patched module — the supported upstream way to apply a transitive
+# CVE fix without waiting on Caddy's release cadence.
+FROM caddy:2.11.3-builder-alpine@sha256:52575959b1eeee9900869325a953d71e4c521ab9102dd5cce07d429ea8246b85 AS caddy-builder
+RUN xcaddy build v2.11.3 \
+      --replace github.com/go-jose/go-jose/v3=github.com/go-jose/go-jose/v3@v3.0.5 \
+      --output /caddy
+
+# Runtime stage: copy the rebuilt caddy binary over the one shipped in
+# caddy:2.11.3-alpine, then add envsubst + strip file caps + create the
+# non-root app user. Keeping the same runtime base preserves the
+# image's working dir (/srv), default CMD, and OCI labels we add below.
 FROM caddy:2.11.3-alpine@sha256:86deaf5e3d3408a6ccec08fbb79989783dd26e206ae10bcf78a801dc8c9ab794 AS server
 
-# Caddy's official image runs as root by default and ships a `caddy` binary
-# at /usr/bin/caddy with the default working dir /srv (its conventional
-# static root). We add `gettext` (which provides envsubst) for Pattern C
-# config injection, then drop to a non-root UID for runtime.
 USER root
+# - Replace the bundled /usr/bin/caddy with the rebuilt one (CVE-2026-34986).
 # - `gettext` provides `envsubst` for Pattern C config injection.
 # - `libcap` provides `setcap`, used to strip the `cap_net_bind_service=ep`
 #   file capability from `/usr/bin/caddy`. The Caddy image ships that file
@@ -34,6 +47,7 @@ USER root
 #   both Docker (`make docker-smoke-test`) AND a hardened K8s
 #   securityContext (`k8s/deployment.yaml`). We delete `libcap` after
 #   use to keep the runtime image lean.
+COPY --from=caddy-builder /caddy /usr/bin/caddy
 RUN apk --no-cache add gettext libcap \
  && setcap -r /usr/bin/caddy \
  && apk --no-cache del libcap \
