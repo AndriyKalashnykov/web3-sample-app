@@ -22,6 +22,10 @@ env:
   # bump this in the same PR as the Makefile constant — no drift.
   # renovate: datasource=github-releases depName=zaproxy/zaproxy extractVersion=^v(?<version>.*)$
   ZAP_VERSION: 2.17.0
+  # Smoke/DAST target host+port (the image EXPOSEs this port). `vars.*` lets an
+  # operator override without editing the workflow; defaults mirror .env.example.
+  APP_INTERNAL_PORT: ${{ vars.APP_INTERNAL_PORT || '8080' }}
+  HEALTHCHECK_HOST: ${{ vars.HEALTHCHECK_HOST || 'localhost' }}
 
 jobs:
 
@@ -51,7 +55,7 @@ jobs:
 
   static-check:
     needs: [changes]
-    if: needs.changes.outputs.code == 'true'
+    if: ${{ !failure() && !cancelled() && needs.changes.outputs.code == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -74,7 +78,7 @@ jobs:
 
   test:
     needs: [changes, static-check]
-    if: needs.changes.outputs.code == 'true'
+    if: ${{ !failure() && !cancelled() && needs.changes.outputs.code == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -95,7 +99,7 @@ jobs:
 
   integration-test:
     needs: [changes, static-check]
-    if: needs.changes.outputs.code == 'true'
+    if: ${{ !failure() && !cancelled() && needs.changes.outputs.code == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -114,13 +118,13 @@ jobs:
       - name: Integration test
         run: make integration-test
         env:
-          VITE_RPCENDPOINT: https://ethereum-rpc.publicnode.com
+          VITE_RPCENDPOINT: ${{ vars.VITE_RPCENDPOINT || 'https://ethereum-rpc.publicnode.com' }}
 
   e2e:
     # KinD-in-Docker inside act doesn't behave reliably; the `make ci-run` target
     # passes `--var ACT=true` to act so this guard skips the job locally.
     needs: [changes, build, test]
-    if: ${{ needs.changes.outputs.code == 'true' && vars.ACT != 'true' }}
+    if: ${{ !failure() && !cancelled() && needs.changes.outputs.code == 'true' && vars.ACT != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -165,7 +169,7 @@ jobs:
 
   build:
     needs: [changes, static-check]
-    if: needs.changes.outputs.code == 'true'
+    if: ${{ !failure() && !cancelled() && needs.changes.outputs.code == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -200,7 +204,7 @@ jobs:
     # build), publish + sign only on tag pushes. Catches regressions before
     # release day instead of on it.
     needs: [changes, static-check, build, test]
-    if: needs.changes.outputs.code == 'true'
+    if: ${{ !failure() && !cancelled() && needs.changes.outputs.code == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -217,6 +221,12 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
+
+      - name: Set up mise
+        uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
+        with:
+          install: true
+          cache: true
 
       - name: Docker metadata
         id: meta
@@ -263,15 +273,41 @@ jobs:
           ignore-unfixed: true
 
       # ===============================================================
+      # GATE 2.5 — container structure test (USER, entrypoint, labels, files)
+      # ===============================================================
+      - name: Container structure test
+        run: container-structure-test test --image web3-sample-app:scan --config container-structure-test.yaml
+
+      # ===============================================================
+      # GATE 2.7 — SBOM (SPDX) via Trivy. Generated as a separate artifact +
+      # cosign attestation (below) rather than via buildx `sbom: true`, which
+      # would break the GHCR "OS / Arch" tab. Preserves the manifest UI while
+      # still publishing a verifiable SBOM.
+      # ===============================================================
+      - name: Generate SBOM (SPDX)
+        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
+        with:
+          image-ref: web3-sample-app:scan
+          scan-type: image
+          format: spdx-json
+          output: sbom.spdx.json
+
+      - name: Upload SBOM
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: sbom-spdx
+          path: sbom.spdx.json
+
+      # ===============================================================
       # GATE 3 — smoke test (boot, curl /internal/isalive, clean up)
       # ===============================================================
       - name: Smoke test
         run: |
           set -euo pipefail
-          docker run -d --name=web3-sample-app-smoke -p 8080:8080 web3-sample-app:scan >/dev/null
+          docker run -d --name=web3-sample-app-smoke -p "${APP_INTERNAL_PORT}:${APP_INTERNAL_PORT}" web3-sample-app:scan >/dev/null
           end=$(( "$(date +%s)" + 30 ))
           while [ "$(date +%s)" -lt $end ]; do
-            if curl -fsS http://localhost:8080/internal/isalive >/dev/null 2>&1; then
+            if curl -fsS "http://${HEALTHCHECK_HOST}:${APP_INTERNAL_PORT}/internal/isalive" >/dev/null 2>&1; then
               echo "PASS: Caddy booted and serving"
               exit 0
             fi
@@ -333,12 +369,26 @@ jobs:
             cosign sign --yes "${tag}@${DIGEST}"
           done <<< "${TAGS}"
 
+      - name: Attest SBOM with cosign
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: |
+          set -euo pipefail
+          # Attest once by digest (the SBOM is identical across tags); use the
+          # repo of the first metadata tag (already lowercased by metadata-action).
+          tag="${TAGS%%$'\n'*}"
+          repo="${tag%:*}"
+          echo "→ cosign attest spdxjson ${repo}@${DIGEST}"
+          cosign attest --yes --predicate sbom.spdx.json --type spdxjson "${repo}@${DIGEST}"
+
   dast:
     # Runs in parallel with `docker`. Skipped under act because ZAP's docker-
     # in-docker bind mount of $GITHUB_WORKSPACE/zap-output doesn't round-trip
     # through act's host docker daemon. `make ci-run` passes --var ACT=true.
     needs: [changes, build, test]
-    if: ${{ needs.changes.outputs.code == 'true' && vars.ACT != 'true' }}
+    if: ${{ !failure() && !cancelled() && needs.changes.outputs.code == 'true' && vars.ACT != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -367,10 +417,10 @@ jobs:
       - name: Smoke test
         run: |
           set -euo pipefail
-          docker run -d --name=web3-sample-app-smoke -p 8080:8080 web3-sample-app:scan >/dev/null
+          docker run -d --name=web3-sample-app-smoke -p "${APP_INTERNAL_PORT}:${APP_INTERNAL_PORT}" web3-sample-app:scan >/dev/null
           end=$(( "$(date +%s)" + 30 ))
           while [ "$(date +%s)" -lt $end ]; do
-            if curl -fsS http://localhost:8080/internal/isalive >/dev/null 2>&1; then
+            if curl -fsS "http://${HEALTHCHECK_HOST}:${APP_INTERNAL_PORT}/internal/isalive" >/dev/null 2>&1; then
               exit 0
             fi
             sleep 1

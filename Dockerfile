@@ -4,9 +4,15 @@ RUN apk --no-cache add git
 RUN corepack enable pnpm
 
 WORKDIR /app
-COPY package.json pnpm-lock.yaml ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile
 COPY . .
-EXPOSE 8080
+
+# Vite dev server reads PORT (vite.config.ts: `Number(process.env.PORT) || 8080`);
+# single-source it through ARG → ENV → EXPOSE so the dev image stays tunable.
+ARG APP_INTERNAL_PORT=8080
+ENV PORT=${APP_INTERNAL_PORT}
+EXPOSE ${APP_INTERNAL_PORT}
+
 USER node
 CMD ["pnpm", "run", "dev"]

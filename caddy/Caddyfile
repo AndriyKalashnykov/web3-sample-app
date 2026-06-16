@@ -32,7 +32,7 @@
 	}
 }
 
-:8080 {
+:{$PORT:8080} {
 	# ----- Security headers — applied to every response -----
 	# `defer` makes Caddy emit these AFTER the inner handler runs, so they
 	# survive even when a handler also calls `header` (matches nginx's
@@ -71,7 +71,7 @@
 
 	# ----- Convenience redirect to the default public RPC endpoint -----
 	handle /publicnode {
-		redir https://ethereum-rpc.publicnode.com 307
+		redir {$PUBLIC_RPC_URL:https://ethereum-rpc.publicnode.com} 307
 	}
 
 	# ----- Runtime config (Pattern C) — never cache; env-substituted at

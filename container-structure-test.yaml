@@ -1,0 +1,38 @@
+schemaVersion: '2.0.0'
+
+# Structural contract for the production image (Dockerfile.prod). Guards against
+# silent drift in the non-root identity, entrypoint, runtime config, OCI labels,
+# and the CVE-patched Caddy binary. Run via `make container-structure-test`
+# (local) and the `docker` CI job. exposedPorts is intentionally not asserted —
+# the caddy base image also exposes 80/443/2019, which would make an exact-set
+# assertion brittle; the listen port is covered by the smoke test instead.
+
+metadataTest:
+  user: "1000:1000"
+  workdir: "/srv"
+  entrypoint: ["sh", "/usr/local/bin/start-caddy.sh"]
+  labels:
+    - key: org.opencontainers.image.licenses
+      value: "MIT"
+    - key: org.opencontainers.image.title
+      value: "Web3 Sample App"
+
+fileExistenceTests:
+  - name: "Caddyfile"
+    path: "/etc/caddy/Caddyfile"
+    shouldExist: true
+  - name: "SPA index.html"
+    path: "/srv/index.html"
+    shouldExist: true
+  - name: "Pattern-C runtime config template"
+    path: "/srv/config.js.template"
+    shouldExist: true
+  - name: "start-caddy.sh entrypoint script"
+    path: "/usr/local/bin/start-caddy.sh"
+    shouldExist: true
+
+commandTests:
+  - name: "caddy is the CVE-2026-34986-patched 2.11.3 build"
+    command: "caddy"
+    args: ["version"]
+    expectedOutput: ["v2.11.3.*"]

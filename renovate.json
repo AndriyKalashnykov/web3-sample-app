@@ -21,7 +21,7 @@
   "labels": ["dependencies"],
   "prConcurrentLimit": 50,
   "prHourlyLimit": 0,
-  "platformAutomerge": true,
+  "platformAutomerge": false,
   "automerge": true,
   "automergeType": "pr",
   "automergeStrategy": "squash",
@@ -84,6 +84,12 @@
       "description": "Group Docker base images (Dockerfiles AND custom-regex docker-datasource pins like CLOUD_PROVIDER_KIND_VERSION / MERMAID_CLI_VERSION / KIND_NODE_IMAGE)",
       "matchDatasources": ["docker"],
       "groupName": "Docker dependencies"
+    },
+    {
+      "description": "Makefile docker-datasource pins (MERMAID_CLI_VERSION, CLOUD_PROVIDER_KIND_VERSION) are tracked by tag only. Disable digest pinning for them so a pinDigest update cannot collide-drop the version bump within the shared Docker group (config:best-practices enables docker:pinDigests globally). matchManagers is intentionally omitted — the custom-regex manager appears as 'regex', not 'custom.regex', and would AND-void the rule.",
+      "matchFileNames": ["Makefile"],
+      "matchDatasources": ["docker"],
+      "pinDigests": false
     },
     {
       "description": "Group mise + Makefile tool versions into one PR (excluding docker datasources, which are claimed by the Docker group above)",

@@ -1,0 +1,6 @@
+# pnpm settings (pnpm 10+ moved these out of package.json's "pnpm" field).
+overrides:
+  # Force the transitive `ws` (pulled in via viem > isows) past the
+  # GHSA-96hv-2xvq-fx4p DoS advisory (patched in 8.21.0). viem has no release
+  # yet that bumps the range; drop this override once it does.
+  "ws@>=8.0.0 <8.21.0": ">=8.21.0"

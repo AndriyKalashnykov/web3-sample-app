@@ -11,3 +11,6 @@ data:
   VITE_RPCENDPOINT: https://ethereum-rpc.publicnode.com
   VITE_BASE_URL: /api/
   PORT: "8080"
+  # Target of the Caddy /publicnode convenience redirect (Caddyfile reads it
+  # via {$PUBLIC_RPC_URL:…}). Defaults to the public node if unset.
+  PUBLIC_RPC_URL: https://ethereum-rpc.publicnode.com
