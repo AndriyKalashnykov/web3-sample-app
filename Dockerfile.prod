@@ -23,6 +23,12 @@ RUN pnpm build && mv dist/config.js dist/config.js.template
 # the patched module — the supported upstream way to apply a transitive
 # CVE fix without waiting on Caddy's release cadence.
 FROM caddy:2.11.3-builder-alpine@sha256:52575959b1eeee9900869325a953d71e4c521ab9102dd5cce07d429ea8246b85 AS caddy-builder
+# Build with a Go toolchain past the stdlib MIME-header DoS (CVE-2026-42504,
+# fixed in Go 1.26.4). The builder image ships Go 1.26.3; GOTOOLCHAIN makes
+# `go build` fetch + use the patched toolchain, recompiling caddy's stdlib.
+# The version below is Renovate-tracked via a Dockerfile.prod customManager
+# (datasource=golang-version) in renovate.json.
+ENV GOTOOLCHAIN=go1.26.4
 RUN xcaddy build v2.11.3 \
       --replace github.com/go-jose/go-jose/v3=github.com/go-jose/go-jose/v3@v3.0.5 \
       --output /caddy
@@ -55,7 +61,11 @@ USER root
 #   securityContext (`k8s/deployment.yaml`). We delete `libcap` after
 #   use to keep the runtime image lean.
 COPY --from=caddy-builder /caddy /usr/bin/caddy
-RUN apk --no-cache add gettext libcap \
+# Upgrade the base image's apk packages first so freshly-disclosed CVEs in
+# system libs (e.g. libcrypto3/openssl CVE-2026-45447) are patched even when
+# the pinned caddy base image lags a rebuild.
+RUN apk --no-cache upgrade \
+ && apk --no-cache add gettext libcap \
  && setcap -r /usr/bin/caddy \
  && apk --no-cache del libcap \
  && addgroup -g ${APP_GID} -S app \

@@ -54,6 +54,14 @@
       "matchStrings": [
         "# renovate: datasource=(?<datasource>[^\\s]+) depName=(?<depName>[^\\s]+)(?: extractVersion=(?<extractVersion>[^\\s]+))?(?: registryUrl=(?<registryUrl>[^\\s]+))?(?: versioning=(?<versioning>[^\\s]+))?\\n\\s*[A-Z_][A-Z0-9_]*:\\s*[\"']?(?<currentValue>[^\"'\\n]+)[\"']?"
       ]
+    },
+    {
+      "customType": "regex",
+      "description": "Track the Go toolchain pinned via GOTOOLCHAIN in Dockerfile.prod (CVE rebuild of the caddy binary)",
+      "managerFilePatterns": ["/^Dockerfile\\.prod$/"],
+      "matchStrings": ["ENV GOTOOLCHAIN=go(?<currentValue>[0-9.]+)"],
+      "datasourceTemplate": "golang-version",
+      "depNameTemplate": "go"
     }
   ],
   "packageRules": [

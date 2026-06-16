@@ -9,11 +9,25 @@
 set -euo pipefail
 
 # Load committed defaults (.env.example = source of truth) + optional local
-# override (.env). `set -a` exports everything sourced. BASE is intentionally
-# NOT defined in .env.example (it's computed from the runtime LB IP by the
-# caller), so sourcing cannot clobber a caller-passed BASE.
-if [ -f .env.example ]; then set -a; . ./.env.example; set +a; fi
-if [ -f .env         ]; then set -a; . ./.env;         set +a; fi
+# override (.env). We do NOT `source` these: the app's `.env` is a Vite dotenv
+# file (`KEY = 'value'` — spaces + quotes) that the shell can't execute. This
+# tolerant parser accepts both `KEY=value` and `KEY = 'value'`. BASE is never
+# set in either file (the caller computes it from the LB IP), so it's safe.
+load_env_file() {
+  [ -f "$1" ] || return 0
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in '' | '#'*) continue ;; esac
+    [ "${line#*=}" = "$line" ] && continue            # skip lines without '='
+    key=${line%%=*}; val=${line#*=}
+    key=$(printf '%s' "$key" | tr -d '[:space:]')     # strip spaces around key
+    val=${val#"${val%%[![:space:]]*}"}                # ltrim
+    val=${val%"${val##*[![:space:]]}"}                # rtrim
+    val=${val#[\"\']}; val=${val%[\"\']}              # strip one layer of quotes
+    case "$key" in [A-Za-z_]*) export "$key=$val" ;; esac
+  done < "$1"
+}
+load_env_file .env.example
+load_env_file .env
 
 # Inline fallbacks mirror .env.example so the script runs even if it's absent.
 HEALTHCHECK_HOST="${HEALTHCHECK_HOST:-localhost}"
