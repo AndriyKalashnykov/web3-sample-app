@@ -4,7 +4,7 @@ RUN apk --no-cache add git
 RUN corepack enable pnpm
 
 WORKDIR /app
-COPY package.json pnpm-lock.yaml ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile
 COPY . .
 
@@ -23,6 +23,12 @@ RUN pnpm build && mv dist/config.js dist/config.js.template
 # the patched module — the supported upstream way to apply a transitive
 # CVE fix without waiting on Caddy's release cadence.
 FROM caddy:2.11.3-builder-alpine@sha256:52575959b1eeee9900869325a953d71e4c521ab9102dd5cce07d429ea8246b85 AS caddy-builder
+# Build with a Go toolchain past the stdlib MIME-header DoS (CVE-2026-42504,
+# fixed in Go 1.26.4). The builder image ships Go 1.26.3; GOTOOLCHAIN makes
+# `go build` fetch + use the patched toolchain, recompiling caddy's stdlib.
+# The version below is Renovate-tracked via a Dockerfile.prod customManager
+# (datasource=golang-version) in renovate.json.
+ENV GOTOOLCHAIN=go1.26.4
 RUN xcaddy build v2.11.3 \
       --replace github.com/go-jose/go-jose/v3=github.com/go-jose/go-jose/v3@v3.0.5 \
       --output /caddy
@@ -32,6 +38,13 @@ RUN xcaddy build v2.11.3 \
 # non-root app user. Keeping the same runtime base preserves the
 # image's working dir (/srv), default CMD, and OCI labels we add below.
 FROM caddy:2.11.3-alpine@sha256:86deaf5e3d3408a6ccec08fbb79989783dd26e206ae10bcf78a801dc8c9ab794 AS server
+
+# Build-time knobs (non-root identity, listen port, healthcheck host). Override
+# with `--build-arg` per environment; defaults match k8s/cm.yaml + the Caddyfile.
+ARG APP_UID=1000
+ARG APP_GID=1000
+ARG APP_INTERNAL_PORT=8080
+ARG HEALTHCHECK_HOST=localhost
 
 USER root
 # - Replace the bundled /usr/bin/caddy with the rebuilt one (CVE-2026-34986).
@@ -48,13 +61,17 @@ USER root
 #   securityContext (`k8s/deployment.yaml`). We delete `libcap` after
 #   use to keep the runtime image lean.
 COPY --from=caddy-builder /caddy /usr/bin/caddy
-RUN apk --no-cache add gettext libcap \
+# Upgrade the base image's apk packages first so freshly-disclosed CVEs in
+# system libs (e.g. libcrypto3/openssl CVE-2026-45447) are patched even when
+# the pinned caddy base image lags a rebuild.
+RUN apk --no-cache upgrade \
+ && apk --no-cache add gettext libcap \
  && setcap -r /usr/bin/caddy \
  && apk --no-cache del libcap \
- && addgroup -g 1000 -S app \
- && adduser -u 1000 -S app -G app \
+ && addgroup -g ${APP_GID} -S app \
+ && adduser -u ${APP_UID} -S app -G app \
  && mkdir -p /srv \
- && chown -R 1000:1000 /srv /etc/caddy
+ && chown -R ${APP_UID}:${APP_GID} /srv /etc/caddy
 
 LABEL org.opencontainers.image.title="Web3 Sample App" \
       org.opencontainers.image.description="Web3 Sample App — React SPA querying Ethereum balances" \
@@ -64,16 +81,30 @@ LABEL org.opencontainers.image.title="Web3 Sample App" \
       io.artifacthub.package.maintainers='[{"name":"Andriy Kalashnykov","email":"andriykalashnykov@gmail.com"}]' \
       io.artifacthub.package.license="MIT"
 
-COPY --from=builder --chown=1000:1000 ./app/caddy/Caddyfile /etc/caddy/Caddyfile
-COPY --from=builder --chown=1000:1000 ./app/dist /srv
-COPY --from=builder --chown=1000:1000 ./app/start-caddy.sh /usr/local/bin/start-caddy.sh
+COPY --from=builder --chown=${APP_UID}:${APP_GID} ./app/caddy/Caddyfile /etc/caddy/Caddyfile
+COPY --from=builder --chown=${APP_UID}:${APP_GID} ./app/dist /srv
+COPY --from=builder --chown=${APP_UID}:${APP_GID} ./app/start-caddy.sh /usr/local/bin/start-caddy.sh
 
 # Drop to non-root for runtime. Caddy with admin off / auto_https off /
 # persist_config off needs no writable state directories — /srv (where
 # start-caddy.sh writes config.js) is the only path that needs write
 # access, and it's already chown'd to UID 1000 above. /tmp is provided
 # by the deployment's emptyDir mount.
-USER 1000:1000
+USER ${APP_UID}:${APP_GID}
 WORKDIR /srv
-EXPOSE 8080
+
+# Promote the port + healthcheck host to runtime ENV. The Caddyfile reads PORT
+# via `:{$PORT:8080}`; the HEALTHCHECK CMD reads both below. K8s overrides PORT
+# via the ConfigMap (k8s/cm.yaml) at runtime.
+ENV PORT=${APP_INTERNAL_PORT} \
+    HEALTHCHECK_HOST=${HEALTHCHECK_HOST}
+EXPOSE ${APP_INTERNAL_PORT}
+
+# In-image liveness: probe Caddy's /internal/isalive route. Flag timings MUST
+# be literal (Docker does not variable-expand them); the CMD body runs under
+# /bin/sh and DOES honor ${HEALTHCHECK_HOST}/${PORT}. wget ships with the
+# alpine base (busybox).
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
+    CMD wget -qO- "http://${HEALTHCHECK_HOST}:${PORT}/internal/isalive" >/dev/null 2>&1 || exit 1
+
 ENTRYPOINT ["sh","/usr/local/bin/start-caddy.sh"]

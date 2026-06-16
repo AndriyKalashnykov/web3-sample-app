@@ -148,4 +148,37 @@ describe('AccountForm component', () => {
       expect(screen.getByText(/Last Block:.*20000000/)).toBeInTheDocument()
     })
   })
+
+  it('queries getDAIBalance and displays its balance when DAI is selected', async () => {
+    const etherMod = await import('@/service/ether')
+    vi.mocked(etherMod.getDAIBalance).mockResolvedValue({
+      block: 21000000n,
+      name: 'Dai Stablecoin',
+      symbol: 'DAI',
+      balance: 2500000000000000000n, // 2.5 DAI (18 decimals)
+      balanceFormatted: '2.5',
+    })
+    vi.mocked(etherMod.formatEther).mockReturnValue('2.5')
+
+    renderWithProviders(<AccountForm />)
+    const user = userEvent.setup()
+
+    // Typing fires onKeyUp -> getBalance() with the default ETH asset; clear
+    // that call history so the assertion below isolates the DAI selection.
+    await user.type(screen.getByPlaceholderText('Address'), TEST_ADDRESS)
+    vi.mocked(etherMod.getETHBalance).mockClear()
+    vi.mocked(etherMod.getDAIBalance).mockClear()
+
+    // Selecting DAI fires onChange -> handleChange -> getBalance(), which reads
+    // the live <select> value ('DAI') and routes to getDAIBalance.
+    await user.selectOptions(screen.getByRole('combobox'), 'DAI')
+
+    await waitFor(() => {
+      expect(etherMod.getDAIBalance).toHaveBeenCalled()
+    })
+    await waitFor(() => {
+      expect(screen.getByText(/Balance:.*2\.5/)).toBeInTheDocument()
+      expect(screen.getByText(/Last Block:.*21000000/)).toBeInTheDocument()
+    })
+  })
 })

@@ -2,13 +2,43 @@
 #
 # E2E HTTP smoke + assertion suite against the deployed SPA.
 #
-# Expects $BASE to point at the SPA (e.g. http://localhost:8080 via
-# `kubectl port-forward`, or a LoadBalancer IP). Defaults to localhost:8080.
+# Expects $BASE to point at the SPA (e.g. a LoadBalancer IP, or a
+# `kubectl port-forward`). If unset, BASE is composed from HEALTHCHECK_HOST
+# and APP_INTERNAL_PORT (sourced from .env.example / .env).
 
 set -euo pipefail
 
-BASE="${BASE:-http://localhost:8080}"
+# Load committed defaults (.env.example = source of truth) + optional local
+# override (.env). We do NOT `source` these: the app's `.env` is a Vite dotenv
+# file (`KEY = 'value'` — spaces + quotes) that the shell can't execute. This
+# tolerant parser accepts both `KEY=value` and `KEY = 'value'`. BASE is never
+# set in either file (the caller computes it from the LB IP), so it's safe.
+load_env_file() {
+  [ -f "$1" ] || return 0
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in '' | '#'*) continue ;; esac
+    [ "${line#*=}" = "$line" ] && continue            # skip lines without '='
+    key=${line%%=*}; val=${line#*=}
+    key=$(printf '%s' "$key" | tr -d '[:space:]')     # strip spaces around key
+    val=${val#"${val%%[![:space:]]*}"}                # ltrim
+    val=${val%"${val##*[![:space:]]}"}                # rtrim
+    val=${val#[\"\']}; val=${val%[\"\']}              # strip one layer of quotes
+    case "$key" in [A-Za-z_]*) export "$key=$val" ;; esac
+  done < "$1"
+}
+load_env_file .env.example
+load_env_file .env
+
+# Inline fallbacks mirror .env.example so the script runs even if it's absent.
+HEALTHCHECK_HOST="${HEALTHCHECK_HOST:-localhost}"
+APP_INTERNAL_PORT="${APP_INTERNAL_PORT:-8080}"
 EXPECTED_RPC="${EXPECTED_RPC:-https://ethereum-rpc.publicnode.com}"
+VITE_BASE_URL="${VITE_BASE_URL:-/api/}"
+# BASE: caller-provided (LB IP) wins; otherwise compose from host+port.
+BASE="${BASE:-http://${HEALTHCHECK_HOST}:${APP_INTERNAL_PORT}}"
+# Host portion of EXPECTED_RPC — single-sources the /publicnode redirect
+# assertion below instead of re-typing the hostname literal.
+EXPECTED_RPC_HOST="${EXPECTED_RPC#http://}"; EXPECTED_RPC_HOST="${EXPECTED_RPC_HOST#https://}"
 PASS=0
 FAIL=0
 
@@ -62,7 +92,7 @@ assert_header_present() {
   local url="$1" header="$2" pattern="$3"
   local value
   value=$(curl -sI "$url" \
-    | awk -v h="$header" 'BEGIN{IGNORECASE=1} tolower($1)==tolower(h":"){sub(/^[^:]*:[ \t]*/,""); print}' \
+    | awk -v h="$header" 'tolower($1)==tolower(h":"){sub(/^[^:]*:[ \t]*/,""); print}' \
     | tr -d '\r')
   if [[ -z "$value" ]]; then
     echo "FAIL: GET $url is missing header '$header'"
@@ -76,6 +106,57 @@ assert_header_present() {
   fi
   echo "PASS: GET $url header '$header' = '$value'"
   PASS=$((PASS + 1))
+}
+
+assert_header_absent() {
+  # Asserts an HTTP response header is NOT present (e.g. the Caddyfile's
+  # `-Server` directive must suppress the "Server: Caddy" token).
+  local url="$1" header="$2" value
+  value=$(curl -sI "$url" \
+    | awk -v h="$header" 'tolower($1)==tolower(h":"){sub(/^[^:]*:[ \t]*/,""); print}' \
+    | tr -d '\r')
+  if [[ -n "$value" ]]; then
+    echo "FAIL: GET $url unexpectedly carries header '$header' = '$value'"
+    FAIL=$((FAIL + 1))
+    return
+  fi
+  echo "PASS: GET $url has no '$header' header"
+  PASS=$((PASS + 1))
+}
+
+assert_real_asset_cached() {
+  # A real hashed build asset (referenced by index.html) MUST be served 200
+  # with the immutable long-cache header from the Caddyfile `handle /assets/*`
+  # block. Resolves a live asset path from the served index rather than
+  # guessing the hashed filename.
+  local asset
+  asset=$(curl -sf "$BASE/" | grep -oE '/assets/[A-Za-z0-9._-]+\.js' | head -1 || true)
+  if [[ -z "$asset" ]]; then
+    echo "FAIL: could not find an /assets/*.js reference in index.html"
+    FAIL=$((FAIL + 1))
+    return
+  fi
+  assert_status GET "$BASE$asset" 200
+  assert_header_present "$BASE$asset" 'Cache-Control' 'max-age=31536000.*immutable'
+}
+
+assert_config_var_substituted() {
+  # Generic Pattern-C check: /config.js must have the given ${VAR} placeholder
+  # replaced (no literal left) and assign the expected substituted value.
+  local var="$1" expected="$2" cfg
+  cfg=$(curl -sf "$BASE/config.js" || true)
+  if echo "$cfg" | grep -qF "\${$var}"; then
+    echo "FAIL: envsubst did not replace \${$var} in /config.js"
+    FAIL=$((FAIL + 1))
+    return
+  fi
+  if echo "$cfg" | grep -qF "$var: \"$expected\""; then
+    echo "PASS: /config.js $var substituted with '$expected'"
+    PASS=$((PASS + 1))
+  else
+    echo "FAIL: /config.js $var not substituted with '$expected'"
+    FAIL=$((FAIL + 1))
+  fi
 }
 
 assert_runtime_config_substituted() {
@@ -129,14 +210,19 @@ assert_body_contains "$BASE/some/unknown/route" '<div id="root">'
 
 # Asset pipeline — missing asset under /assets/ should 404 (no SPA fallback there)
 assert_status GET "$BASE/assets/does-not-exist.js" 404
+# A real hashed asset must be 200 + immutable long-cache.
+assert_real_asset_cached
 
 # Public RPC redirect (Caddy /publicnode -> 307 to public RPC)
-assert_redirect_target "$BASE/publicnode" 307 "ethereum-rpc.publicnode.com"
+assert_redirect_target "$BASE/publicnode" 307 "$EXPECTED_RPC_HOST"
 
 # Pattern C runtime config — VITE_RPCENDPOINT must be substituted into the
 # external /config.js loaded by index.html, written by start-caddy.sh's envsubst
 # pass. If the placeholder is still literal, container startup is broken.
 assert_runtime_config_substituted "$EXPECTED_RPC"
+# VITE_BASE_URL is the second var envsubst substitutes — verify its placeholder
+# was replaced too (the deployed ConfigMap sets it to /api/).
+assert_config_var_substituted 'VITE_BASE_URL' "$VITE_BASE_URL"
 
 # index.html must reference /config.js as an external script — proves the
 # init container's seed-html step copied the bundled HTML into the writable
@@ -151,10 +237,15 @@ assert_body_contains "$BASE/" '<script src="/config.js"></script>'
 # future handler that calls `header` without `defer` could silently shadow
 # them — assert at the wire.
 for path in "/" "/config.js"; do
-  assert_header_present "$BASE$path" 'Content-Security-Policy'  "default-src 'self'"
-  assert_header_present "$BASE$path" 'X-Frame-Options'          'DENY'
-  assert_header_present "$BASE$path" 'X-Content-Type-Options'   'nosniff'
-  assert_header_present "$BASE$path" 'Referrer-Policy'          'strict-origin-when-cross-origin'
+  assert_header_present "$BASE$path" 'Content-Security-Policy'    "default-src 'self'"
+  assert_header_present "$BASE$path" 'X-Frame-Options'           'DENY'
+  assert_header_present "$BASE$path" 'X-Content-Type-Options'    'nosniff'
+  assert_header_present "$BASE$path" 'Referrer-Policy'           'strict-origin-when-cross-origin'
+  assert_header_present "$BASE$path" 'Cross-Origin-Opener-Policy'   'same-origin'
+  assert_header_present "$BASE$path" 'Cross-Origin-Resource-Policy' 'same-origin'
+  assert_header_present "$BASE$path" 'Permissions-Policy'        'camera=\(\)'
+  # `-Server` in the Caddyfile drops the "Server: Caddy" token (server_tokens off).
+  assert_header_absent "$BASE$path" 'Server'
 done
 
 # /config.js must be served with Cache-Control: no-store so the browser

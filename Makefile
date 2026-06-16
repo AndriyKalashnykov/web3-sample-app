@@ -31,6 +31,17 @@ CLOUD_PROVIDER_KIND_VERSION := v0.10.0
 KIND_CLUSTER_NAME := $(APP_NAME)
 K8S_NAMESPACE     := web3
 
+# Operator-tunable runtime values (host/port/timeouts/poll counts). `?=` lets
+# the environment, CI, or a `.env` override them without editing this file.
+# Defaults mirror the values baked into k8s manifests + the Caddyfile.
+APP_INTERNAL_PORT     ?= 8080
+HEALTHCHECK_HOST      ?= localhost
+ROLLOUT_TIMEOUT       ?= 180s
+LB_WAIT_SECONDS       ?= 60
+LB_POLL_INTERVAL      ?= 1
+HTTP_READY_RETRIES    ?= 15
+SMOKE_TIMEOUT_SECONDS ?= 30
+
 # Pin every kubectl call to this project's KinD context so a sibling project
 # running `kubectl config use-context` cannot silently steer recipes to the
 # wrong cluster. See /makefile skill §"Multi-session kubectl context safety".
@@ -148,8 +159,22 @@ mermaid-lint:
 	done
 	@echo "Mermaid lint passed."
 
-#static-check: @ Composite quality gate: lint + vulncheck + trivy-fs + trivy-config + secrets + mermaid-lint + deps-prune-check
-static-check: lint vulncheck trivy-fs trivy-config secrets mermaid-lint deps-prune-check
+#check-node-alignment: @ Fail if the Node major drifts across .mise.toml, .node-version, and both Dockerfiles
+check-node-alignment:
+	@set -euo pipefail; \
+	mise_major=$$(grep -E '^node\s*=' .mise.toml | sed -E 's/.*"([0-9]+).*/\1/'); \
+	nv_major=$$(sed -E 's/^v?([0-9]+).*/\1/' .node-version); \
+	df_major=$$(grep -oE 'node:[0-9]+' Dockerfile | head -1 | cut -d: -f2); \
+	dfp_major=$$(grep -oE 'node:[0-9]+' Dockerfile.prod | head -1 | cut -d: -f2); \
+	echo "Node majors -> .mise.toml=$$mise_major .node-version=$$nv_major Dockerfile=$$df_major Dockerfile.prod=$$dfp_major"; \
+	if [ "$$mise_major" != "$$nv_major" ] || [ "$$mise_major" != "$$df_major" ] || [ "$$mise_major" != "$$dfp_major" ]; then \
+		echo "ERROR: Node major version drift detected. Align .mise.toml, .node-version, Dockerfile, and Dockerfile.prod."; \
+		exit 1; \
+	fi; \
+	echo "Node major aligned across all pins ($$mise_major)."
+
+#static-check: @ Composite quality gate: node-alignment + lint + vulncheck + trivy-fs + trivy-config + secrets + mermaid-lint + deps-prune-check
+static-check: check-node-alignment lint vulncheck trivy-fs trivy-config secrets mermaid-lint deps-prune-check
 
 #format: @ Run prettier format
 format: install
@@ -184,37 +209,37 @@ deps-playwright: install
 
 #e2e: @ Deploy to KinD (LoadBalancer via cloud-provider-kind) and run curl-based e2e suite
 e2e: kind-create kind-deploy
-	@$(KUBECTL_NS) rollout status deployment/$(APP_NAME) --timeout=180s
+	@$(KUBECTL_NS) rollout status deployment/$(APP_NAME) --timeout=$(ROLLOUT_TIMEOUT)
 	@bash -c 'set -e; \
 		echo "Waiting for LoadBalancer IP..."; \
-		for i in $$(seq 1 60); do \
+		for i in $$(seq 1 $(LB_WAIT_SECONDS)); do \
 			LB_IP=$$($(KUBECTL_NS) get svc $(APP_NAME) -o jsonpath="{.status.loadBalancer.ingress[0].ip}"); \
 			[ -n "$$LB_IP" ] && break; \
-			sleep 1; \
+			sleep $(LB_POLL_INTERVAL); \
 		done; \
-		[ -z "$$LB_IP" ] && { echo "ERROR: no LoadBalancer IP after 60s"; exit 1; }; \
+		[ -z "$$LB_IP" ] && { echo "ERROR: no LoadBalancer IP after $(LB_WAIT_SECONDS)s"; exit 1; }; \
 		echo "LB IP: $$LB_IP"; \
-		for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do \
-			curl -sf "http://$$LB_IP:8080/internal/isalive" >/dev/null 2>&1 && break; \
-			sleep 1; \
+		for i in $$(seq 1 $(HTTP_READY_RETRIES)); do \
+			curl -sf "http://$$LB_IP:$(APP_INTERNAL_PORT)/internal/isalive" >/dev/null 2>&1 && break; \
+			sleep $(LB_POLL_INTERVAL); \
 		done; \
-		BASE="http://$$LB_IP:8080" ./e2e/e2e-test.sh'
+		BASE="http://$$LB_IP:$(APP_INTERNAL_PORT)" ./e2e/e2e-test.sh'
 
 #e2e-browser: @ Run Playwright browser e2e against deployed SPA via LoadBalancer IP
 e2e-browser: kind-create kind-deploy deps-playwright
-	@$(KUBECTL_NS) rollout status deployment/$(APP_NAME) --timeout=180s
+	@$(KUBECTL_NS) rollout status deployment/$(APP_NAME) --timeout=$(ROLLOUT_TIMEOUT)
 	@bash -c 'set -e; \
-		for i in $$(seq 1 60); do \
+		for i in $$(seq 1 $(LB_WAIT_SECONDS)); do \
 			LB_IP=$$($(KUBECTL_NS) get svc $(APP_NAME) -o jsonpath="{.status.loadBalancer.ingress[0].ip}"); \
 			[ -n "$$LB_IP" ] && break; \
-			sleep 1; \
+			sleep $(LB_POLL_INTERVAL); \
 		done; \
-		[ -z "$$LB_IP" ] && { echo "ERROR: no LoadBalancer IP after 60s"; exit 1; }; \
-		for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do \
-			curl -sf "http://$$LB_IP:8080/internal/isalive" >/dev/null 2>&1 && break; \
-			sleep 1; \
+		[ -z "$$LB_IP" ] && { echo "ERROR: no LoadBalancer IP after $(LB_WAIT_SECONDS)s"; exit 1; }; \
+		for i in $$(seq 1 $(HTTP_READY_RETRIES)); do \
+			curl -sf "http://$$LB_IP:$(APP_INTERNAL_PORT)/internal/isalive" >/dev/null 2>&1 && break; \
+			sleep $(LB_POLL_INTERVAL); \
 		done; \
-		E2E_BASE_URL="http://$$LB_IP:8080" pnpm exec playwright test -c e2e/playwright.config.ts'
+		E2E_BASE_URL="http://$$LB_IP:$(APP_INTERNAL_PORT)" pnpm exec playwright test -c e2e/playwright.config.ts'
 
 #run: @ Start dev server on port 8080
 run: install
@@ -230,21 +255,25 @@ image-build-prod:
 
 #image-run: @ Run the locally-built image on port 8080
 image-run: image-stop
-	@docker run --rm -p 8080:8080 --name $(APP_NAME) $(APP_NAME):$(CURRENTTAG)
+	@docker run --rm -p $(APP_INTERNAL_PORT):$(APP_INTERNAL_PORT) --name $(APP_NAME) $(APP_NAME):$(CURRENTTAG)
 
 #image-stop: @ Stop the running container
 image-stop:
 	@docker stop $(APP_NAME) || true
 
+#container-structure-test: @ Validate prod image structure (USER, entrypoint, labels, files, caddy version)
+container-structure-test: deps image-build-prod
+	@container-structure-test test --image $(APP_NAME):$(CURRENTTAG) --config container-structure-test.yaml
+
 #docker-smoke-test: @ Build prod image, run it on 8080, probe /internal/isalive (mirrors CI Gate 3)
 docker-smoke-test: image-build-prod
 	@docker rm -f $(APP_NAME)-smoke 2>/dev/null || true
-	@docker run -d --name=$(APP_NAME)-smoke -p 8080:8080 $(APP_NAME):$(CURRENTTAG) >/dev/null
+	@docker run -d --name=$(APP_NAME)-smoke -p $(APP_INTERNAL_PORT):$(APP_INTERNAL_PORT) $(APP_NAME):$(CURRENTTAG) >/dev/null
 	@echo "Waiting for Caddy /internal/isalive ..."
-	@end=$$(( $$(date +%s) + 30 )); ok=1; \
+	@end=$$(( $$(date +%s) + $(SMOKE_TIMEOUT_SECONDS) )); ok=1; \
 	while [ $$(date +%s) -lt $$end ]; do \
-		if curl -fsS http://localhost:8080/internal/isalive >/dev/null 2>&1; then ok=0; break; fi; \
-		sleep 1; \
+		if curl -fsS http://$(HEALTHCHECK_HOST):$(APP_INTERNAL_PORT)/internal/isalive >/dev/null 2>&1; then ok=0; break; fi; \
+		sleep $(LB_POLL_INTERVAL); \
 	done; \
 	if [ $$ok -ne 0 ]; then \
 		echo "FAIL: smoke test never reached /internal/isalive"; \
@@ -261,7 +290,7 @@ dast-scan:
 		-v "$(PWD)/zap-output:/zap/wrk:rw" \
 		ghcr.io/zaproxy/zaproxy:$(ZAP_VERSION) \
 		zap-baseline.py \
-			-t http://localhost:8080 \
+			-t http://$(HEALTHCHECK_HOST):$(APP_INTERNAL_PORT) \
 			-I \
 			-r zap-report.html \
 			-J zap-report.json \
@@ -336,15 +365,15 @@ endif
 
 #kind-up: @ Bring the full stack up — cluster + cloud-provider-kind + image + manifests (compose-up alias)
 kind-up: kind-deploy
-	@$(KUBECTL_NS) wait --for=condition=available --timeout=180s deployment/$(APP_NAME) >/dev/null
-	@bash -c 'for i in $$(seq 1 60); do \
+	@$(KUBECTL_NS) wait --for=condition=available --timeout=$(ROLLOUT_TIMEOUT) deployment/$(APP_NAME) >/dev/null
+	@bash -c 'for i in $$(seq 1 $(LB_WAIT_SECONDS)); do \
 		LB_IP=$$($(KUBECTL_NS) get svc $(APP_NAME) -o jsonpath="{.status.loadBalancer.ingress[0].ip}"); \
 		[ -n "$$LB_IP" ] && break; \
-		sleep 1; \
+		sleep $(LB_POLL_INTERVAL); \
 	done; \
-	[ -z "$$LB_IP" ] && { echo "ERROR: no LoadBalancer IP after 60s"; exit 1; }; \
+	[ -z "$$LB_IP" ] && { echo "ERROR: no LoadBalancer IP after $(LB_WAIT_SECONDS)s"; exit 1; }; \
 	echo "======================================"; \
-	echo "Stack is up — open http://$$LB_IP:8080"; \
+	echo "Stack is up — open http://$$LB_IP:$(APP_INTERNAL_PORT)"; \
 	echo "======================================"'
 
 #kind-down: @ Tear down the full stack — workload + cluster + cloud-provider-kind (compose-down alias)
@@ -465,9 +494,9 @@ cleanup-images:
 	done
 
 .PHONY: help deps deps-act deps-hadolint deps-k8s deps-trivy deps-secrets deps-playwright clean install build lint vulncheck \
-	trivy-fs trivy-config secrets mermaid-lint static-check format check upgrade \
+	trivy-fs trivy-config secrets mermaid-lint check-node-alignment static-check format check upgrade \
 	test test-watch test-coverage integration-test e2e e2e-browser run \
-	image-build image-build-prod image-run image-stop docker-smoke-test dast dast-scan \
+	image-build image-build-prod image-run image-stop docker-smoke-test container-structure-test dast dast-scan \
 	ci ci-run ci-run-tag release tag-delete \
 	kind-up kind-down kind-create kind-destroy kind-cloud-provider-start kind-cloud-provider-stop \
 	kind-deploy kind-undeploy kind-redeploy deps-prune deps-prune-check renovate-validate \

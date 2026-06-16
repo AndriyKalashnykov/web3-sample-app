@@ -11,6 +11,15 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     setupFiles: ['./src/test/setup.ts'],
+    server: {
+      deps: {
+        // MUI 9.1.x ships .mjs that directory-imports react-transition-group
+        // (e.g. `react-transition-group/TransitionGroupContext`), which Node's
+        // native ESM resolver rejects. Inlining routes these through Vite's
+        // transform pipeline, where directory imports resolve correctly.
+        inline: ['@mui/material', 'react-transition-group'],
+      },
+    },
     include: ['src/**/__tests__/**/*.test.{ts,tsx}'],
     exclude: ['**/node_modules/**', '**/dist/**', '**/*.integration.test.{ts,tsx}'],
     coverage: {
