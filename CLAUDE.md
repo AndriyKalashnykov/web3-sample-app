@@ -104,13 +104,13 @@ Vite (oxc minifier, not terser). Console and debugger statements are stripped in
   - `integration-test`: real-RPC vitest suite (`make integration-test`).
   - `e2e`: KinD + `cloud-provider-kind` (real LoadBalancer Service IPs on the kind Docker network) + `make e2e` (curl) + `make e2e-browser` (Playwright Chromium). Gated `if: vars.ACT != 'true'`.
   - `dast`: parallel with `docker`/`e2e`. Builds `:scan` image via shared cache, boots it, runs OWASP ZAP baseline (`-I`, FAIL-only blocking). Cached ZAP image (~3.4GB). Gated `if: vars.ACT != 'true'`. Uploads HTML/JSON/MD report.
-  - `docker`: Pattern A. Validation gates (Trivy image scan, smoke test, multi-arch build) run on **every push**; publish + cosign sign-by-digest are step-level gated to tag pushes only — catches multi-arch / signing regressions before tag day instead of on it.
+  - `docker`: Pattern A. Validation gates (Trivy image scan, smoke test, image build) run on **every push**; publish + cosign sign-by-digest are step-level gated to tag pushes only — catches build / signing regressions before tag day instead of on it.
     - Gate 1: Build for scan (`load: true`, linux/amd64) into local docker daemon
     - Gate 2: Trivy image scan (`CRITICAL,HIGH` blocking, `vuln,secret,misconfig` scanners)
     - Gate 2.5: container-structure-test (`make container-structure-test` config — USER 1000, entrypoint, OCI labels, runtime files, CVE-patched caddy version)
     - Gate 2.7: SPDX SBOM via Trivy → uploaded as the `sbom-spdx` artifact (and cosign-attested by digest on tag push). Kept out of the buildx manifest (`sbom: false`) so the GHCR "OS / Arch" tab still renders
     - Gate 3: Smoke test (`docker run` + `curl /internal/isalive`)
-    - Build (push: ${{ tag }}): multi-arch (`linux/amd64,linux/arm64`), `provenance: false` + `sbom: false` (keeps GHCR "OS / Arch" tab rendering)
+    - Build (push: ${{ tag }}): single-arch (`linux/amd64`; arm64 dropped to keep CI fast), `provenance: false` + `sbom: false` (keeps GHCR "OS / Arch" tab rendering)
     - Cosign keyless OIDC signing by digest on tag push + SPDX SBOM attestation (requires `id-token: write`)
   - `ci-pass`: aggregator gate. Fails if any upstream job failed OR was cancelled.
 - All tools (Node, pnpm, hadolint, kubectl, kind, yq, Trivy, gitleaks, act, **renovate**) come from `.mise.toml` via `jdx/mise-action`. `cloud-provider-kind` runs as a Docker container pinned via `CLOUD_PROVIDER_KIND_VERSION` Makefile constant. `ZAP_VERSION` is duplicated between Makefile and workflow `env:` block; both annotations are tracked by Renovate's workflow custom-regex manager so they bump in lockstep.
@@ -120,7 +120,7 @@ Vite (oxc minifier, not terser). Console and debugger statements are stripped in
 
 ## Image Publishing & Hardening
 
-The `docker` job in `ci.yml` ships images on tag pushes; on non-tag pushes it runs the same Trivy + smoke + multi-arch validation build with `push: false`. See README "Pre-push image hardening" for the user-facing gate table and `cosign verify` command. To re-harden / extend, run `/harden-image-pipeline`.
+The `docker` job in `ci.yml` ships images on tag pushes; on non-tag pushes it runs the same Trivy + smoke + `linux/amd64` validation build with `push: false`. See README "Pre-push image hardening" for the user-facing gate table and `cosign verify` command. To re-harden / extend, run `/harden-image-pipeline`.
 
 `make ci-run-tag` exercises the `docker` job locally under act (synthetic tag-push event); cosign signing fails under act (no OIDC) — expected.
 

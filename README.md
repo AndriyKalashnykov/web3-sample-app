@@ -7,7 +7,7 @@
 
 Reference **React 19 SPA** that reads **ETH and DAI ERC-20 balances** from Ethereum mainnet entirely in the browser via **viem 2** (no backend) — runtime-configured through a non-root **Caddy 2** container (Pattern-C `/config.js` injection) and deployable to Kubernetes.
 
-Ships a **four-layer test pyramid** (Vitest unit/component + real-RPC integration, KinD curl e2e, Playwright Chromium e2e) and a **supply-chain-hardened GitHub Actions pipeline**: Trivy fs/config/image scans, gitleaks, OWASP ZAP **DAST**, multi-arch build with **cosign keyless OIDC signing** — all tools **mise**-pinned and updates driven by **Renovate**.
+Ships a **four-layer test pyramid** (Vitest unit/component + real-RPC integration, KinD curl e2e, Playwright Chromium e2e) and a **supply-chain-hardened GitHub Actions pipeline**: Trivy fs/config/image scans, gitleaks, OWASP ZAP **DAST**, container-structure-test + SPDX SBOM, **cosign keyless OIDC signing** — all tools **mise**-pinned and updates driven by **Renovate**.
 
 ```mermaid
 C4Context
@@ -334,7 +334,7 @@ GitHub Actions runs on every push to `main`, every tag `v*`, every pull request,
 | **build** | after static-check | `make build`; uploads `dist/` artifact |
 | **e2e** | after build + test (skipped under act) | KinD + cloud-provider-kind LoadBalancer + curl assertions + Playwright browser e2e — `make e2e` and `make e2e-browser` |
 | **dast** | after build + test (skipped under act) | OWASP ZAP baseline scan against booted container; ZAP image cached |
-| **docker** | after static-check + build + test | Validates Trivy image scan + container-structure-test + SPDX SBOM + smoke test + multi-arch build on every push; pushes to GHCR + cosign keyless signing + SBOM attestation only on tag push |
+| **docker** | after static-check + build + test | Validates Trivy image scan + container-structure-test + SPDX SBOM + smoke test + `linux/amd64` build on every push; pushes to GHCR + cosign keyless signing + SBOM attestation only on tag push |
 | **ci-pass** | always (after all above) | Aggregator gate; fails if any upstream job failed or was cancelled |
 
 #### Required Secrets and Variables
@@ -358,7 +358,7 @@ The `docker` job runs the following gates **before** any image is pushed to GHCR
 | 2.5 | **Container structure test** | Drift in the non-root USER, entrypoint, OCI labels, runtime files, or the CVE-patched caddy version | `container-structure-test` (`container-structure-test.yaml`) |
 | 2.7 | **SPDX SBOM** (artifact + cosign attestation on tag) | No machine-readable bill of materials for the image | `aquasecurity/trivy-action` (`format: spdx-json`) + `cosign attest` |
 | 3 | **Smoke test** | Caddy fails to boot or `/internal/isalive` doesn't respond | `docker run` + `curl` |
-| 4 | Multi-arch build + push (`linux/amd64,linux/arm64`) | Publishes for both architectures with `cache-from: type=gha` (~95% cache hit from Gate 1) | `docker/build-push-action` |
+| 4 | Build + push (`linux/amd64`) | Publishes the image with `cache-from: type=gha` (~95% cache hit from Gate 1) | `docker/build-push-action` |
 | 5 | **Cosign keyless OIDC signing** | Sigstore signature on the manifest digest (Rekor transparency log) | `sigstore/cosign-installer` + `cosign sign --yes <tag>@<digest>` |
 
 The parallel `dast` job adds:
@@ -405,7 +405,7 @@ Uses [act](https://github.com/nektos/act) with a randomized artifact-server port
    ```bash
    make release
    ```
-   The target validates the semver format (`vN.N.N`), writes `version.txt`, commits both files, tags the commit, and pushes both the tag and the branch. The `docker` CI job then builds and publishes the multi-arch image to GHCR.
+   The target validates the semver format (`vN.N.N`), writes `version.txt`, commits both files, tags the commit, and pushes both the tag and the branch. The `docker` CI job then builds and publishes the `linux/amd64` image to GHCR.
 3. To delete a tag (locally and on the remote):
    ```bash
    make tag-delete TAG=v0.0.1

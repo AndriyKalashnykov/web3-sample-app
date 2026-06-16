@@ -200,7 +200,7 @@ jobs:
           retention-days: 7
 
   docker:
-    # Pattern A: validate on every push (Gates 1-3 + multi-arch validation
+    # Pattern A: validate on every push (Gates 1-3 + linux/amd64 validation
     # build), publish + sign only on tag pushes. Catches regressions before
     # release day instead of on it.
     needs: [changes, static-check, build, test]
@@ -215,9 +215,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@ce360397dd3f832beb865e1373c09c0e9f86d70a # v4
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
@@ -322,7 +319,7 @@ jobs:
         run: docker rm -f web3-sample-app-smoke 2>/dev/null || true
 
       # ===============================================================
-      # All gates passed → publish multi-arch
+      # All gates passed → publish (linux/amd64)
       # ===============================================================
       - name: Log in to GHCR
         if: startsWith(github.ref, 'refs/tags/')
@@ -332,15 +329,16 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # On non-tag pushes this runs as a multi-arch validation build (push: false)
-      # so cross-platform regressions surface before tag day.
+      # On non-tag pushes this runs as a validation build (push: false) so
+      # build regressions surface before tag day. Single-arch (linux/amd64);
+      # arm64 dropped to keep CI fast (no QEMU cross-build).
       - name: Build and push
         id: push
         uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
         with:
           context: .
           file: ./Dockerfile.prod
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           push: ${{ startsWith(github.ref, 'refs/tags/') }}
           provenance: false
           sbom: false
