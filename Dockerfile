@@ -1,5 +1,5 @@
 # https://hub.docker.com/_/node/tags
-FROM node:24.16.0-alpine@sha256:2bdb65ed1dab192432bc31c95f94155ca5ad7fc1392fb7eb7526ab682fa5bf14
+FROM node:24.17.0-alpine@sha256:156b55f92e98ccd5ef49578a8cea0df4679826564bad1c9d4ef04462b9f0ded6
 RUN apk --no-cache add git
 RUN corepack enable pnpm
 

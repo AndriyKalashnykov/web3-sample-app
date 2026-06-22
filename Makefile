@@ -20,7 +20,7 @@ MERMAID_CLI_VERSION := 11.15.0
 
 # Bumped together with aqua:kubernetes-sigs/kind in .mise.toml — see KinD
 # release notes for the matching node image. Not independently trackable.
-KIND_NODE_IMAGE := v1.35.1
+KIND_NODE_IMAGE := v1.36.1
 
 # renovate: datasource=github-releases depName=zaproxy/zaproxy extractVersion=^v(?<version>.*)$
 ZAP_VERSION := 2.17.0

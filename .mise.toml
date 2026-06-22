@@ -11,27 +11,27 @@
 node = "24"
 
 # pnpm package manager (canonical core mise backend).
-pnpm = "11.3.0"
+pnpm = "11.8.0"
 
 # Tracked: github-tags github.com/nektos/act
-"aqua:nektos/act" = "0.2.88"
+"aqua:nektos/act" = "0.2.89"
 
 # Tracked: github-tags github.com/hadolint/hadolint
 "aqua:hadolint/hadolint" = "2.14.0"
 
 # Tracked: github-tags github.com/kubernetes/kubectl
-"aqua:kubernetes/kubectl" = "1.36.1"
+"aqua:kubernetes/kubectl" = "1.36.2"
 
 # Tracked: github-tags github.com/kubernetes-sigs/kind
 # KIND_NODE_IMAGE in Makefile is bumped together with this — see KinD
 # release notes for the matching node image (not independently trackable).
-"aqua:kubernetes-sigs/kind" = "0.31.0"
+"aqua:kubernetes-sigs/kind" = "0.32.0"
 
 # Tracked: github-tags github.com/mikefarah/yq
-"aqua:mikefarah/yq" = "4.53.2"
+"aqua:mikefarah/yq" = "4.53.3"
 
 # Tracked: github-tags github.com/aquasecurity/trivy
-"aqua:aquasecurity/trivy" = "0.70.0"
+"aqua:aquasecurity/trivy" = "0.71.2"
 
 # Tracked: github-tags github.com/gitleaks/gitleaks
 "aqua:gitleaks/gitleaks" = "8.30.1"
@@ -40,7 +40,7 @@ pnpm = "11.3.0"
 "aqua:GoogleContainerTools/container-structure-test" = "1.22.1"
 
 # Tracked: npm registry (renovate package).
-"npm:renovate" = "43.150.0"
+"npm:renovate" = "43.235.1"
 
 # Note: cloud-provider-kind runs as a Docker container (registry.k8s.io/...)
 # pinned via CLOUD_PROVIDER_KIND_VERSION in the Makefile + Renovate.

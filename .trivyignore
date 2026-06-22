@@ -1,4 +1,15 @@
 # Trivy ignore list — entries here are tracked in CLAUDE.md "Upgrade Backlog".
 # Remove an entry once the corresponding backlog item ships.
 
-# (No active ignores — k8s securityContext + resource limits shipped 2026-04-19.)
+# Base-image (caddy:2.11.4-alpine → alpine 3.23) OS-package CVEs whose fixes are
+# NOT yet in the alpine 3.23 repo — `apk update && apk upgrade --simulate` finds
+# no newer package as of 2026-06-22, so the Dockerfile's `apk --no-cache upgrade`
+# cannot patch them yet. They affect the caddy 2.11.3 base too (pre-existing,
+# not introduced by the 2.11.4 bump). Reachability is nil: caddy is a static Go
+# binary that dynamically links NONE of these libs (verified via `ldd`), so the
+# served workload never exercises openssl/libxml2/libexpat code paths. The
+# `apk --no-cache upgrade` step pulls the fixes automatically once alpine 3.23
+# ships them; the `exp:` dates auto-expire these waivers to force re-evaluation.
+CVE-2026-45447 exp:2026-07-22
+CVE-2026-45186 exp:2026-07-22
+CVE-2026-6732 exp:2026-07-22
