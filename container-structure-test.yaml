@@ -32,7 +32,7 @@ fileExistenceTests:
     shouldExist: true
 
 commandTests:
-  - name: "caddy is the CVE-2026-34986-patched 2.11.3 build"
+  - name: "caddy is the Go-stdlib-CVE-patched 2.11.4 rebuild"
     command: "caddy"
     args: ["version"]
-    expectedOutput: ["v2.11.3.*"]
+    expectedOutput: ["v2.11.4.*"]

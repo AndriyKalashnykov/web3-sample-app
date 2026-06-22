@@ -79,14 +79,12 @@
       "description": "Group devDependencies non-major updates",
       "matchDepTypes": ["devDependencies"],
       "matchUpdateTypes": ["minor", "patch"],
-      "groupName": "dev-dependencies",
-      "automerge": true
+      "groupName": "dev-dependencies"
     },
     {
       "description": "Group type definitions",
       "matchPackageNames": ["/^@types\\//"],
-      "groupName": "type-definitions",
-      "automerge": true
+      "groupName": "type-definitions"
     },
     {
       "description": "Group Docker base images (Dockerfiles AND custom-regex docker-datasource pins like CLOUD_PROVIDER_KIND_VERSION / MERMAID_CLI_VERSION / KIND_NODE_IMAGE)",
@@ -110,6 +108,11 @@
       "matchManagers": ["mise", "npm"],
       "matchPackageNames": ["pnpm"],
       "groupName": "pnpm"
+    },
+    {
+      "description": "Group the Node version across managers. Node is mirrored in .mise.toml/.node-version (mise manager, datasource node-version, major 24) and in the node:NN FROM lines of Dockerfile/Dockerfile.prod (dockerfile manager, datasource docker, 24.16.0). Without this rule a Node bump opens independent PRs that can land separately and drift the pins (make check-node-alignment then reds CI). Placed LAST so this groupName wins for node over the Docker dependencies group.",
+      "matchDepNames": ["node"],
+      "groupName": "Node"
     }
   ]
 }

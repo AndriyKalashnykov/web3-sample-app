@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 All commands go through the Makefile. Use `make help` to list targets.
 
 ```bash
-make deps           # install mise + all pinned tools (node, pnpm, hadolint, kubectl, kind, yq, trivy, gitleaks, act)
+make deps           # install mise + all pinned tools (node, pnpm, hadolint, kubectl, kind, yq, trivy, gitleaks, act, container-structure-test, renovate)
 make install        # pnpm install (uses --frozen-lockfile when CI=true)
 make build          # tsc + vite build (depends on install)
 make lint           # prettier --check + hadolint
@@ -40,7 +40,7 @@ make cleanup-images # delete untagged GHCR images, keep 5 (called by cleanup-ima
 
 ## Tool Versions (mise)
 
-`.mise.toml` is the single source of truth for every pinned tool: Node.js, pnpm, hadolint, kubectl, kind, yq, Trivy, gitleaks, act, and `npm:renovate`. `make deps` bootstraps mise via `https://mise.run` (installs to `~/.local/bin`, no sudo) and then runs `mise install` to provision the rest. CI uses `jdx/mise-action` so local and CI read the same `.mise.toml`. Renovate tracks updates via the native `mise` manager.
+`.mise.toml` is the single source of truth for every pinned tool: Node.js, pnpm, hadolint, kubectl, kind, yq, Trivy, gitleaks, act, container-structure-test, and `npm:renovate`. `make deps` bootstraps mise via `https://mise.run` (installs to `~/.local/bin`, no sudo) and then runs `mise install` to provision the rest. CI uses `jdx/mise-action` so local and CI read the same `.mise.toml`. Renovate tracks updates via the native `mise` manager.
 
 Three Docker-image versions stay pinned as Makefile constants (with `# renovate:` annotations) because mise can't manage Docker images: `MERMAID_CLI_VERSION` (mermaid lint), `ZAP_VERSION` (DAST), `CLOUD_PROVIDER_KIND_VERSION` (KinD LoadBalancer controller). `KIND_NODE_IMAGE` is also a Makefile constant but is bumped together with the `aqua:kubernetes-sigs/kind` mise pin (see KinD release notes for matched node image — not independently trackable).
 
@@ -127,7 +127,7 @@ The `docker` job in `ci.yml` ships images on tag pushes; on non-tag pushes it ru
 ## Docker
 
 - **Dockerfile**: Dev image (Node alpine + pnpm dev server on port 8080); `corepack enable pnpm` (no `npm install -g`). See `Dockerfile` for the pinned base image digest.
-- **Dockerfile.prod**: Three-stage build — (1) `node:24-alpine` builder produces the Vite bundle; (2) `caddy:2.11.3-builder-alpine` runs `xcaddy build v2.11.3 --replace github.com/go-jose/go-jose/v3=…@v3.0.5` to rebuild Caddy with the CVE-2026-34986 fix (transitive Go JOSE DoS — Caddy 2.11.3 ships v3.0.4; v3.0.5 has the patch but no Caddy release carries it yet); (3) `caddy:2.11.3-alpine` runtime, with the rebuilt binary copied in over the bundled one, `gettext` added for `start-caddy.sh`'s envsubst pass, `cap_net_bind_service` stripped from `/usr/bin/caddy` (so the binary execs cleanly under K8s `capabilities.drop:[ALL]`), non-root `USER ${APP_UID}:${APP_GID}` (default `1000:1000`, build-arg overridable). The listen port is single-sourced through `ARG APP_INTERNAL_PORT=8080` → `ENV PORT` → Caddyfile `:{$PORT:8080}` → `EXPOSE`, so the K8s ConfigMap `PORT` actually drives the listen port. A `HEALTHCHECK` probes `/internal/isalive` via busybox `wget` (literal flag timings, `${HEALTHCHECK_HOST}:${PORT}` CMD body). All three stages pin base images by SHA256 digest. OCI labels (artifacthub, vendor, license) on the runtime stage. See `Dockerfile.prod` for the pinned tags.
+- **Dockerfile.prod**: Three-stage build — (1) `node:24-alpine` builder produces the Vite bundle; (2) `caddy:2.11.4-builder-alpine` runs `xcaddy build v2.11.4` with `GOTOOLCHAIN=go1.26.4` to rebuild Caddy's stdlib past the Go MIME-header DoS (CVE-2026-42504; the vanilla `caddy:2.11.4-alpine` binary ships Go 1.26.3, still vulnerable — verified via `trivy image`). Caddy 2.11.4 already pins go-jose/v3 v3.0.5, so the earlier `--replace` workaround for CVE-2026-34986 is retired; (3) `caddy:2.11.4-alpine` runtime, with the rebuilt binary copied in over the bundled one, `gettext` added for `start-caddy.sh`'s envsubst pass, `cap_net_bind_service` stripped from `/usr/bin/caddy` (so the binary execs cleanly under K8s `capabilities.drop:[ALL]`), non-root `USER ${APP_UID}:${APP_GID}` (default `1000:1000`, build-arg overridable). The listen port is single-sourced through `ARG APP_INTERNAL_PORT=8080` → `ENV PORT` → Caddyfile `:{$PORT:8080}` → `EXPOSE`, so the K8s ConfigMap `PORT` actually drives the listen port. A `HEALTHCHECK` probes `/internal/isalive` via busybox `wget` (literal flag timings, `${HEALTHCHECK_HOST}:${PORT}` CMD body). All three stages pin base images by SHA256 digest. OCI labels (artifacthub, vendor, license) on the runtime stage. See `Dockerfile.prod` for the pinned tags.
 - **`packageManager` field** in `package.json` pins pnpm so corepack uses the project-declared version.
 - **`.dockerignore`**: Excludes `node_modules`, `dist`, `.git`, `e2e`, `zap-output`, `playwright-report`, `test-results`, `.env`.
 - **`.env.example`**: Committed source of truth for operator-tunable values (`VITE_RPCENDPOINT`, `APP_INTERNAL_PORT`, e2e/Make timeouts). Copy to gitignored `.env` to override locally; shell scripts source it, the Makefile mirrors it as `?=` defaults.
@@ -151,9 +151,10 @@ The `docker` job in `ci.yml` ships images on tag pushes; on non-tag pushes it ru
 
 ## Upgrade Backlog
 
-Last reviewed: 2026-06-16 (post `/project-review` apply — Node toolchain-alignment guard + Renovate cross-manager group, `.env.example` parameter externalization, CI change-gate `!failure() && !cancelled()` hardening, Renovate `pinDigests` collision + `platformAutomerge` race fixes, e2e header/asset coverage, in-image HEALTHCHECK, container-structure-test gate, SPDX SBOM artifact + cosign attestation, Caddyfile `$PORT`/`$PUBLIC_RPC_URL` externalization, Dockerfile UID/port ARGs).
+Last reviewed: 2026-06-22 (`/ship-it` — Stage 1 upgrades: caddy 2.11.3→2.11.4 + retired the go-jose `--replace` workaround (2.11.4 ships go-jose v3.0.5; kept the GOTOOLCHAIN stdlib rebuild for CVE-2026-42504), node 24.16.0→24.17.0, kind 0.31→0.32 + KIND_NODE_IMAGE v1.35.1→v1.36.1, pnpm 11.3→11.8, mise tool patches (act/kubectl/yq/trivy 0.70→0.71.2/renovate), react-router-dom 7.18 + viem 2.53; plus the `/project-review` apply — Renovate `Node` cross-manager group across mise + dockerfile managers, dropped redundant per-rule `automerge: true`, cleanup workflows `cancel-in-progress: false`, README H1 rename + tightened `cosign verify` identity-regexp + provisioned-tools/host-prereq doc, container-structure-test added to tool enumerations, Skills-table path corrections, C4Deployment element trim). Prior (2026-06-16): Node toolchain-alignment guard, `.env.example` parameter externalization, CI change-gate `!failure() && !cancelled()` hardening, Renovate `pinDigests` collision + `platformAutomerge` race fixes, e2e header/asset coverage, in-image HEALTHCHECK, container-structure-test gate, SPDX SBOM artifact + cosign attestation, Caddyfile `$PORT`/`$PUBLIC_RPC_URL` externalization, Dockerfile UID/port ARGs.
 
 - [ ] **Architecture diagram tech-strings drift** — README's C4 diagrams embed framework version strings (e.g. `"React 19 SPA, viem 2"`, `"Caddy 2 on :8080"`). Renovate cannot update these. Re-run `/architecture-diagrams` after any major bump.
+- [ ] **`.trivyignore` waivers for 3 base-image OS CVEs** — `CVE-2026-45447` (openssl), `CVE-2026-45186` (libexpat), `CVE-2026-6732` (libxml2) are present in the `caddy:2.11.4-alpine`/alpine-3.23 base; fixes are not yet in the alpine 3.23 repo (`apk upgrade` has no newer package), so they're waived with `exp:2026-07-22`. Reachability is nil (caddy is a static Go binary linking none of them). The Dockerfile's `apk --no-cache upgrade` pulls the fixes automatically once alpine ships them — remove the `.trivyignore` entries when `apk upgrade --simulate` shows the patched versions, or the waivers auto-expire on 2026-07-22 (re-evaluate then). `@types/node` 26 (major typings) is left to Renovate's type-definitions group.
 
 ## Skills
 
@@ -167,7 +168,7 @@ Use the following skills when working on related files:
 | `README.md` | `/readme` |
 | `.github/workflows/*.{yml,yaml}` | `/ci-workflow` |
 | `Dockerfile`, `Dockerfile.prod` (when changing publish pipeline) | `/harden-image-pipeline` |
-| Any file under `e2e/`, `tests/integration/`, or new test layers | `/test-coverage-analysis` |
-| Any markdown with ` ```mermaid `, or files under `docs/diagrams/` | `/architecture-diagrams` |
+| Any file under `e2e/`, `src/**/__tests__/*.integration.test.ts`, or new test layers | `/test-coverage-analysis` |
+| Any markdown with ` ```mermaid ` (diagrams are currently inline in README.md / CLAUDE.md) | `/architecture-diagrams` |
 
 When spawning subagents, always pass conventions from the respective skill into the agent's prompt.

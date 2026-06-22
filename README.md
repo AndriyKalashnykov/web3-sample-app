@@ -3,7 +3,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-brightgreen.svg)](https://opensource.org/licenses/MIT)
 [![Renovate enabled](https://img.shields.io/badge/renovate-enabled-brightgreen.svg)](https://app.renovatebot.com/dashboard#github/AndriyKalashnykov/web3-sample-app)
 
-# Web3 Sample App
+# Ethereum Balance Viewer — React SPA
 
 Reference **React 19 SPA** that reads **ETH and DAI ERC-20 balances** from Ethereum mainnet entirely in the browser via **viem 2** (no backend) — runtime-configured through a non-root **Caddy 2** container (Pattern-C `/config.js` injection) and deployable to Kubernetes.
 
@@ -33,7 +33,7 @@ C4Context
 | Web3 | viem 2 (`createPublicClient`, `http`, `readContract`, `parseAbi`) |
 | i18n | i18next + react-i18next (English bundled) |
 | Testing | Vitest 4, React Testing Library, jsdom, Playwright (Chromium) |
-| Container | Builder: `node:24.16.0-alpine`; runtime: `caddy:2.11.3-alpine` (port 8080, runs as UID 1000; `cap_net_bind_service` stripped from the binary so it execs cleanly under `securityContext.capabilities.drop:[ALL]`) |
+| Container | Builder: `node:24.17.0-alpine`; runtime: `caddy:2.11.4-alpine` (port 8080, runs as UID 1000; `cap_net_bind_service` stripped from the binary so it execs cleanly under `securityContext.capabilities.drop:[ALL]`) |
 | Orchestration | Kubernetes (manifests under `k8s/`); local KinD via Makefile |
 | CI/CD | GitHub Actions, Renovate (platform automerge) |
 | Code quality | Prettier, hadolint, Trivy (fs+config), gitleaks |
@@ -42,7 +42,7 @@ C4Context
 ## Quick Start
 
 ```bash
-make deps       # install mise + all pinned tools (node, pnpm, hadolint, kubectl, kind, yq, trivy, gitleaks, act)
+make deps       # install mise + all pinned tools (node, pnpm, hadolint, kubectl, kind, yq, trivy, gitleaks, act, container-structure-test, renovate)
 make install    # pnpm install
 make build      # tsc + vite build
 make test       # run unit tests
@@ -59,7 +59,9 @@ make run        # start dev server, then open http://localhost:8080
 | [curl](https://curl.se/) | latest | Bootstraps `mise` in `make deps` |
 | [mise](https://mise.jdx.dev/) | latest | Manages every other tool (auto-installed by `make deps`) |
 
-`make deps` installs [mise](https://mise.jdx.dev/) into `~/.local/bin` (no sudo) and then runs `mise install` against the pinned `.mise.toml` to provision: Node.js, pnpm, hadolint, kubectl, kind, yq, Trivy, gitleaks, act.
+`make deps` installs [mise](https://mise.jdx.dev/) into `~/.local/bin` (no sudo) and then runs `mise install` against the pinned `.mise.toml` to provision: Node.js, pnpm, hadolint, kubectl, kind, yq, Trivy, gitleaks, act, container-structure-test, renovate.
+
+> The `image-*`, `docker-smoke-test`, `dast`, and `cleanup-*` targets shell out to host-provided tools that mise does not manage — `docker` (and, for the GHCR cleanup targets, [`gh`](https://cli.github.com/) + `jq`). Install those separately if you run those targets locally.
 
 ## Architecture
 
@@ -126,8 +128,7 @@ C4Deployment
     Container(envoy, "cloud-provider-kind + kindccm envoy", "Per-Service LB proxy on the kind Docker network")
     Deployment_Node(cluster, "KinD cluster (namespace: web3)", "kindest/node") {
       Deployment_Node(pod, "Pod (Deployment, replicas=1)") {
-        Container(init, "seed-html (init)", "Copies bundled assets + index.html + config.js.template into writable emptyDir")
-        Container(caddy, "web3-sample-app", "Caddy 2 on :8080; envsubst /config.js at boot")
+        Container(caddy, "web3-sample-app", "Caddy 2 on :8080; seed-html initContainer seeds assets into emptyDir, then envsubst /config.js at boot")
       }
       ContainerDb(cm, "ConfigMap", "web3-sample-app-config: VITE_RPCENDPOINT, VITE_BASE_URL, PORT")
       Container(svc, "K8s Service", "type: LoadBalancer, port 8080 → pod :8080")
@@ -179,7 +180,7 @@ make image-build         # dev image (Node alpine + pnpm dev server)
 make image-build-prod    # production image (Caddy 2 on 8080)
 ```
 
-The production Dockerfile is three-stage: `node:24.16.0-alpine` builder → `caddy:2.11.3-builder-alpine` (runs `xcaddy build v2.11.3 --replace github.com/go-jose/go-jose/v3=…@v3.0.5` to rebuild Caddy with the CVE-2026-34986 fix — Caddy 2.11.3 still pins the vulnerable go-jose v3.0.4 as an indirect dep, and no newer Caddy release carries the bump yet) → `caddy:2.11.3-alpine` runtime, with the rebuilt binary copied over the bundled one. Both Dockerfiles use `pnpm install --frozen-lockfile`, pin base images by SHA256 digest, and copy lockfiles before source for layer caching. The final image runs as non-root (UID 1000); the build adds `gettext` (for `envsubst`) and strips `cap_net_bind_service` from `/usr/bin/caddy` so the binary execs cleanly under `securityContext.capabilities.drop:[ALL]` in K8s.
+The production Dockerfile is three-stage: `node:24.17.0-alpine` builder → `caddy:2.11.4-builder-alpine` (runs `xcaddy build v2.11.4` with `GOTOOLCHAIN=go1.26.4` to rebuild Caddy's stdlib past the Go MIME-header DoS CVE-2026-42504 — the vanilla `caddy:2.11.4-alpine` binary ships Go 1.26.3 and is still flagged by Trivy; Caddy 2.11.4 already pins go-jose v3.0.5 so the earlier `--replace` workaround is retired) → `caddy:2.11.4-alpine` runtime, with the rebuilt binary copied over the bundled one. Both Dockerfiles use `pnpm install --frozen-lockfile`, pin base images by SHA256 digest, and copy lockfiles before source for layer caching. The final image runs as non-root (UID 1000); the build adds `gettext` (for `envsubst`) and strips `cap_net_bind_service` from `/usr/bin/caddy` so the binary execs cleanly under `securityContext.capabilities.drop:[ALL]` in K8s.
 
 ## Deployment
 
@@ -373,7 +374,7 @@ Verify a published image's signature:
 
 ```bash
 cosign verify ghcr.io/andriykalashnykov/web3-sample-app:<tag> \
-  --certificate-identity-regexp 'https://github\.com/AndriyKalashnykov/web3-sample-app/.+' \
+  --certificate-identity-regexp 'https://github\.com/AndriyKalashnykov/web3-sample-app/\.github/workflows/ci\.yml@refs/tags/v.+' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
 

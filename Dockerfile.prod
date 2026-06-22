@@ -1,5 +1,5 @@
 # https://hub.docker.com/_/node/tags
-FROM node:24.16.0-alpine@sha256:2bdb65ed1dab192432bc31c95f94155ca5ad7fc1392fb7eb7526ab682fa5bf14 AS builder
+FROM node:24.17.0-alpine@sha256:156b55f92e98ccd5ef49578a8cea0df4679826564bad1c9d4ef04462b9f0ded6 AS builder
 RUN apk --no-cache add git
 RUN corepack enable pnpm
 
@@ -15,29 +15,24 @@ COPY . .
 RUN pnpm build && mv dist/config.js dist/config.js.template
 
 # https://hub.docker.com/_/caddy/tags
-# Builder stage: rebuild Caddy with go-jose v3 bumped past CVE-2026-34986.
-# Caddy 2.11.3 (latest stable as of 2026-05-12) pins `github.com/go-jose/
-# go-jose/v3 v3.0.4` as an indirect dep; v3.0.5 ships the fix (Go JOSE
-# DoS via crafted JWE). Until a newer Caddy releases with the bumped
-# dep, `xcaddy --replace` produces a functionally-identical binary with
-# the patched module — the supported upstream way to apply a transitive
-# CVE fix without waiting on Caddy's release cadence.
-FROM caddy:2.11.3-builder-alpine@sha256:52575959b1eeee9900869325a953d71e4c521ab9102dd5cce07d429ea8246b85 AS caddy-builder
-# Build with a Go toolchain past the stdlib MIME-header DoS (CVE-2026-42504,
-# fixed in Go 1.26.4). The builder image ships Go 1.26.3; GOTOOLCHAIN makes
-# `go build` fetch + use the patched toolchain, recompiling caddy's stdlib.
-# The version below is Renovate-tracked via a Dockerfile.prod customManager
-# (datasource=golang-version) in renovate.json.
+# Builder stage: rebuild Caddy with a Go toolchain past the stdlib
+# MIME-header DoS (CVE-2026-42504, fixed in Go 1.26.4). caddy:2.11.4-alpine
+# ships a binary built with Go 1.26.3 (verified via `trivy image` —
+# stdlib HIGH still present), so the vanilla image is vulnerable;
+# GOTOOLCHAIN makes `go build` fetch + use the patched toolchain,
+# recompiling caddy's stdlib. The version below is Renovate-tracked via a
+# Dockerfile.prod customManager (datasource=golang-version) in renovate.json.
+# Note: Caddy 2.11.4 already pins go-jose/v3 v3.0.5, so the earlier
+# `--replace` workaround for CVE-2026-34986 is retired.
+FROM caddy:2.11.4-builder-alpine@sha256:0ff10d4b83af453e5526b1c3cd7ae43396832aa8a2a55311d624f6812b33767d AS caddy-builder
 ENV GOTOOLCHAIN=go1.26.4
-RUN xcaddy build v2.11.3 \
-      --replace github.com/go-jose/go-jose/v3=github.com/go-jose/go-jose/v3@v3.0.5 \
-      --output /caddy
+RUN xcaddy build v2.11.4 --output /caddy
 
 # Runtime stage: copy the rebuilt caddy binary over the one shipped in
-# caddy:2.11.3-alpine, then add envsubst + strip file caps + create the
+# caddy:2.11.4-alpine, then add envsubst + strip file caps + create the
 # non-root app user. Keeping the same runtime base preserves the
 # image's working dir (/srv), default CMD, and OCI labels we add below.
-FROM caddy:2.11.3-alpine@sha256:86deaf5e3d3408a6ccec08fbb79989783dd26e206ae10bcf78a801dc8c9ab794 AS server
+FROM caddy:2.11.4-alpine@sha256:ed26d6d77aaec5366102f2abb4eeba98ebd356159b49c2ed6e20181ecddb27a7 AS server
 
 # Build-time knobs (non-root identity, listen port, healthcheck host). Override
 # with `--build-arg` per environment; defaults match k8s/cm.yaml + the Caddyfile.
@@ -47,7 +42,7 @@ ARG APP_INTERNAL_PORT=8080
 ARG HEALTHCHECK_HOST=localhost
 
 USER root
-# - Replace the bundled /usr/bin/caddy with the rebuilt one (CVE-2026-34986).
+# - Replace the bundled /usr/bin/caddy with the rebuilt one (Go-stdlib CVE-2026-42504).
 # - `gettext` provides `envsubst` for Pattern C config injection.
 # - `libcap` provides `setcap`, used to strip the `cap_net_bind_service=ep`
 #   file capability from `/usr/bin/caddy`. The Caddy image ships that file

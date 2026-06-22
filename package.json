@@ -2,7 +2,7 @@
   "name": "web3-sample-app",
   "version": "v0.0.18",
   "private": true,
-  "packageManager": "pnpm@11.3.0",
+  "packageManager": "pnpm@11.8.0",
   "description": "Web3 frontend with React, Vite, TypeScript and viem 2",
   "license": "MIT",
   "author": "AndriyKalashnykov(AndriyKalashnykov@gmail.com)",
@@ -29,8 +29,8 @@
     "react-dom": "^19.2.7",
     "react-i18next": "^17.0.8",
     "react-redux": "^9.3.0",
-    "react-router-dom": "^7.17.0",
-    "viem": "^2.52.2"
+    "react-router-dom": "^7.18.0",
+    "viem": "^2.53.1"
   },
   "devDependencies": {
     "@playwright/test": "1.61.0",
