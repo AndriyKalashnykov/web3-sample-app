@@ -62,6 +62,15 @@
       "matchStrings": ["ENV GOTOOLCHAIN=go(?<currentValue>[0-9.]+)"],
       "datasourceTemplate": "golang-version",
       "depNameTemplate": "go"
+    },
+    {
+      "customType": "regex",
+      "description": "Track the caddy version in the `xcaddy build vX.Y.Z` rebuild line of Dockerfile.prod so it bumps together with the caddy FROM digests (dockerfile manager) — otherwise Renovate bumps the FROM base while the rebuilt-binary version silently drifts. Uses github-releases (NOT docker datasource) to avoid config:best-practices' docker:pinDigests trying to digest-pin a bare version literal; the `caddy` group rule below joins it with the FROM lines into one PR.",
+      "managerFilePatterns": ["/^Dockerfile\\.prod$/"],
+      "matchStrings": ["xcaddy build v(?<currentValue>[0-9]+\\.[0-9]+\\.[0-9]+)"],
+      "datasourceTemplate": "github-releases",
+      "depNameTemplate": "caddyserver/caddy",
+      "extractVersionTemplate": "^v(?<version>.*)$"
     }
   ],
   "packageRules": [
@@ -113,6 +122,11 @@
       "description": "Group the Node version across managers. Node is mirrored in .mise.toml/.node-version (mise manager, datasource node-version, major 24) and in the node:NN FROM lines of Dockerfile/Dockerfile.prod (dockerfile manager, datasource docker, 24.16.0). Without this rule a Node bump opens independent PRs that can land separately and drift the pins (make check-node-alignment then reds CI). Placed LAST so this groupName wins for node over the Docker dependencies group.",
       "matchDepNames": ["node"],
       "groupName": "Node"
+    },
+    {
+      "description": "Group the caddy version across the Dockerfile.prod FROM digests (dockerfile manager, depName `caddy`) and the `xcaddy build vX.Y.Z` rebuild literal (custom.regex, depName `caddyserver/caddy`) so the rebuilt binary version never drifts from the runtime base. Placed LAST so this groupName wins for caddy over the Docker dependencies group; the FROM lines keep docker:pinDigests (only their datasource is docker), the xcaddy literal does not (github-releases).",
+      "matchDepNames": ["caddy", "caddyserver/caddy"],
+      "groupName": "caddy"
     }
   ]
 }
