@@ -26,7 +26,7 @@ KIND_NODE_IMAGE := v1.36.1
 ZAP_VERSION := 2.17.0
 
 # renovate: datasource=docker depName=registry.k8s.io/cloud-provider-kind/cloud-controller-manager
-CLOUD_PROVIDER_KIND_VERSION := v0.10.0
+CLOUD_PROVIDER_KIND_VERSION := v0.11.1
 
 KIND_CLUSTER_NAME := $(APP_NAME)
 K8S_NAMESPACE     := web3
