@@ -42,7 +42,7 @@ C4Context
 ## Quick Start
 
 ```bash
-make deps       # install mise + all pinned tools (node, pnpm, hadolint, kubectl, kind, yq, trivy, gitleaks, act, container-structure-test, renovate)
+make deps       # install mise + all pinned tools (node, pnpm, hadolint, kubectl, kind, yq, trivy, gitleaks, act, container-structure-test)
 make install    # pnpm install
 make build      # tsc + vite build
 make test       # run unit tests
@@ -59,7 +59,7 @@ make run        # start dev server, then open http://localhost:8080
 | [curl](https://curl.se/) | latest | Bootstraps `mise` in `make deps` |
 | [mise](https://mise.jdx.dev/) | latest | Manages every other tool (auto-installed by `make deps`) |
 
-`make deps` installs [mise](https://mise.jdx.dev/) into `~/.local/bin` (no sudo) and then runs `mise install` against the pinned `.mise.toml` to provision: Node.js, pnpm, hadolint, kubectl, kind, yq, Trivy, gitleaks, act, container-structure-test, renovate.
+`make deps` installs [mise](https://mise.jdx.dev/) into `~/.local/bin` (no sudo) and then runs `mise install` against the pinned `.mise.toml` to provision: Node.js, pnpm, hadolint, kubectl, kind, yq, Trivy, gitleaks, act, container-structure-test. (The Renovate CLI used by `make renovate-validate` is pinned separately as a Makefile constant and fetched on demand via `mise exec`, not installed here — this keeps `make deps` from reinstalling its large dependency tree on every run.)
 
 > The `image-*`, `docker-smoke-test`, `dast`, and `cleanup-*` targets shell out to host-provided tools that mise does not manage — `docker` (and, for the GHCR cleanup targets, [`gh`](https://cli.github.com/) + `jq`). Install those separately if you run those targets locally.
 
@@ -154,8 +154,8 @@ Four test layers, each with its own Makefile target, config, and CI job:
 |-------|--------|-------|---------------|----------------|
 | Unit + Component | `make test` | `src/store/models/__tests__/`, `src/service/ether/__tests__/ether.test.ts`, `src/components/__tests__/` | jsdom (vitest, in-process) | Pure functions, Redux slices, mocked ether service, components rendered via `renderWithProviders` |
 | Integration | `make integration-test` | `src/service/ether/__tests__/ether.integration.test.ts` | node (vitest, real network) | Ether service against the real `VITE_RPCENDPOINT` (block fetch, ETH/DAI balance, malformed-input negatives) |
-| E2E — HTTP | `make e2e` | `e2e/e2e-test.sh` | KinD + cloud-provider-kind LoadBalancer | Caddy routes (`/internal/isalive`, `/internal/isready`, `/publicnode` → 307, SPA fallback, missing asset 404) + verifies `start-caddy.sh` substituted `VITE_RPCENDPOINT` into served `/config.js` |
-| E2E — Browser | `make e2e-browser` | `e2e/playwright.config.ts`, `e2e/account-form.spec.ts` | KinD + cloud-provider-kind + Playwright Chromium | AccountForm renders + real RPC roundtrip updates the displayed block number — gated in CI as the only layer that catches CSP violations and runtime SPA errors |
+| E2E — HTTP | `make e2e` | `e2e/e2e-test.sh` | KinD + cloud-provider-kind LoadBalancer | Caddy routes (`/internal/isalive`, `/internal/isready`, `/publicnode` → 307, SPA fallback, missing asset 404); security headers (CSP/X-Frame-Options/etc.) on `/`, `/assets/*`, `/internal/*`, `/config.js` + its JS `Content-Type`; verifies `start-caddy.sh` substituted `VITE_RPCENDPOINT` into served `/config.js` |
+| E2E — Browser | `make e2e-browser` | `e2e/playwright.config.ts`, `e2e/account-form.spec.ts` | KinD + cloud-provider-kind + Playwright Chromium | AccountForm renders; real ETH + DAI RPC roundtrips update the block counter AND render a well-formed numeric balance; an `@axe-core/playwright` scan asserts no critical/serious WCAG2A/AA a11y violations — gated in CI as the only layer that catches CSP violations and runtime SPA errors |
 
 ```bash
 make test               # unit + component (~1s)
@@ -318,7 +318,7 @@ Run `make help` to see the full list. Grouped by purpose:
 | `make release` | Create and push a new tag (`vN.N.N`) |
 | `make tag-delete TAG=v0.0.1` | Delete a tag locally and remotely |
 | `make renovate-validate` | Validate Renovate configuration |
-| `make cleanup-runs` | Delete workflow runs older than 7 days (keeps at least 5) |
+| `make cleanup-runs` | Delete workflow runs older than 7 days (keeps the newest 5 per workflow; never deletes open-PR runs) |
 | `make cleanup-caches` | Delete GitHub Actions caches from merged or deleted branches |
 | `make cleanup-images` | Delete untagged GHCR images (keeps 5 most recent) |
 
@@ -330,6 +330,7 @@ GitHub Actions runs on every push to `main`, every tag `v*`, every pull request,
 |-----|----------|-------|
 | **changes** | every event | `dorny/paths-filter` detects whether the diff includes code (anything outside docs/images). Doc-only PRs short-circuit downstream jobs while still reporting `ci-pass` (Rulesets-safe) |
 | **static-check** | after changes (code paths only) | `make install` + `make static-check` (check-node-alignment, lint, vulncheck, trivy-fs, trivy-config, secrets, mermaid-lint, deps-prune-check) |
+| **mermaid-lint** | docs-only changes (off `changes`) | `make mermaid-lint` validates the README/CLAUDE Mermaid blocks. Code changes run mermaid-lint inside `static-check` instead, so this job fires only when a doc-only edit skips `static-check` |
 | **test** | after static-check | `make test` (unit + component) |
 | **integration-test** | after static-check | `make integration-test` (real-RPC integration suite) |
 | **build** | after static-check | `make build`; uploads `dist/` artifact |
