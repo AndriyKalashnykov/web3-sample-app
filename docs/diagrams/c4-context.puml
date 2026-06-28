@@ -1,0 +1,32 @@
+@startuml c4-context
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/v2.13.0/C4_Context.puml
+
+LAYOUT_LEFT_RIGHT()
+
+' Modern flat styling: no shadows, sharp corners, clean sans-serif, modern palette.
+skinparam backgroundColor #FAFAFA
+skinparam shadowing false
+skinparam roundCorner 4
+skinparam defaultFontName "Inter, Helvetica, Arial, sans-serif"
+skinparam defaultFontSize 13
+skinparam ArrowColor #37474F
+skinparam ArrowThickness 1.2
+skinparam rectangleBorderThickness 1.3
+
+UpdateElementStyle("person",          $fontColor="#FFFFFF", $bgColor="#0F766E", $borderColor="#134E4A")
+UpdateElementStyle("system",          $fontColor="#FFFFFF", $bgColor="#2563EB", $borderColor="#1E3A8A")
+UpdateElementStyle("external_system", $fontColor="#FFFFFF", $bgColor="#475569", $borderColor="#1E293B")
+
+title System Context — Web3 Sample App
+
+Person(user, "End User", "Browser; supplies an Ethereum address")
+System(spa, "Web3 Sample App", "React 19 SPA, viem 2, Caddy 2-served")
+System_Ext(rpc, "Ethereum JSON-RPC", "viem PublicClient, mainnet, http transport via VITE_RPCENDPOINT")
+System_Ext(dai, "DAI ERC-20 Contract", "0x6B17...1d0F on Ethereum mainnet")
+
+Rel(user, spa, "Uses", "HTTPS")
+Rel(spa, rpc, "getBalance / getBlockNumber", "JSON-RPC over HTTPS")
+Rel(spa, dai, "balanceOf(address)", "Contract call via JSON-RPC")
+
+SHOW_LEGEND()
+@enduml

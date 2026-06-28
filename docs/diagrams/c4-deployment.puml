@@ -1,0 +1,45 @@
+@startuml c4-deployment
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/v2.13.0/C4_Deployment.puml
+
+LAYOUT_LEFT_RIGHT()
+
+' Modern flat styling: no shadows, sharp corners, clean sans-serif, modern palette.
+skinparam backgroundColor #FAFAFA
+skinparam shadowing false
+skinparam roundCorner 4
+skinparam defaultFontName "Inter, Helvetica, Arial, sans-serif"
+skinparam defaultFontSize 13
+skinparam ArrowColor #37474F
+skinparam ArrowThickness 1.2
+skinparam rectangleBorderThickness 1.3
+
+UpdateElementStyle("person",          $fontColor="#FFFFFF", $bgColor="#0F766E", $borderColor="#134E4A")
+UpdateElementStyle("container",       $fontColor="#FFFFFF", $bgColor="#2563EB", $borderColor="#1E3A8A")
+UpdateElementStyle("container_db",    $fontColor="#FFFFFF", $bgColor="#7C3AED", $borderColor="#4C1D95")
+UpdateElementStyle("external_system", $fontColor="#FFFFFF", $bgColor="#475569", $borderColor="#1E293B")
+
+title Deployment — KinD + cloud-provider-kind LoadBalancer
+
+Person(user, "End User", "Browser")
+
+Deployment_Node(host, "Developer Host", "Linux + Docker; kind Docker network") {
+  Container(envoy, "cloud-provider-kind + kindccm envoy", "Per-Service LB proxy on the kind Docker network")
+  Deployment_Node(cluster, "KinD cluster — namespace: web3", "kindest/node") {
+    Deployment_Node(pod, "Pod (Deployment, replicas=1)") {
+      Container(caddy, "web3-sample-app", "Caddy 2 on :8080; seed-html init seeds assets into emptyDir, then envsubst /config.js at boot")
+    }
+    ContainerDb(cm, "ConfigMap", "web3-sample-app-config: VITE_RPCENDPOINT, VITE_BASE_URL, PORT")
+    Container(svc, "K8s Service", "type: LoadBalancer, 8080 -> pod :8080")
+  }
+}
+
+System_Ext(rpc, "Ethereum JSON-RPC", "via VITE_RPCENDPOINT")
+
+Rel(user, envoy, "HTTP", "to LB IP:8080")
+Rel(envoy, svc, "Routes to")
+Rel(svc, caddy, "Routes to")
+Rel(caddy, cm, "Reads env from", "envFrom")
+Rel(caddy, rpc, "JSON-RPC", "via window.__CONFIG__")
+
+SHOW_LEGEND()
+@enduml

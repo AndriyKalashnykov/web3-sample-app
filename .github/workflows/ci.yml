@@ -55,6 +55,9 @@ jobs:
             code:
               - '!(**.md|docs/**|specs/**|benchmarks/**|LICENSE|.gitignore|.claudeignore|.claude/**|**.png|**.jpg|**.gif|**.svg)'
               - 'CLAUDE.md'
+              # Re-include PlantUML diagram sources: a .puml edit must run
+              # static-check -> diagrams-check so stale PNGs can't merge.
+              - 'docs/diagrams/**/*.puml'
             docs:
               - '**.md'
 
