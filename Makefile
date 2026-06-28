@@ -18,6 +18,18 @@ export PATH := $(MISE_DATA_DIR)/shims:$(LOCAL_BIN):$(PATH)
 # renovate: datasource=docker depName=minlag/mermaid-cli
 MERMAID_CLI_VERSION := 11.15.0
 
+# renovate: datasource=docker depName=plantuml/plantuml
+PLANTUML_VERSION := 1.2026.6
+
+# PlantUML C4 diagram sources + rendered PNGs (committed). A PLANTUML_VERSION
+# bump changes the stamp's NAME, so the stale stamp no longer satisfies the
+# per-PNG prereq → every PNG re-renders (catches the renderer-bumped-but-PNG-
+# not-regenerated drift the .puml mtime gate alone would miss).
+DIAGRAM_DIR   := docs/diagrams
+DIAGRAM_SRC   := $(wildcard $(DIAGRAM_DIR)/*.puml)
+DIAGRAM_OUT   := $(patsubst $(DIAGRAM_DIR)/%.puml,$(DIAGRAM_DIR)/out/%.png,$(DIAGRAM_SRC))
+DIAGRAM_STAMP := $(DIAGRAM_DIR)/out/.plantuml-$(PLANTUML_VERSION).stamp
+
 # Bumped together with aqua:kubernetes-sigs/kind in .mise.toml — see KinD
 # release notes for the matching node image. Not independently trackable.
 KIND_NODE_IMAGE := v1.36.1
@@ -171,6 +183,30 @@ mermaid-lint: _require-docker
 	done
 	@echo "Mermaid lint passed."
 
+#diagrams: @ Render PlantUML C4 diagrams to PNG (docs/diagrams/out)
+diagrams: _require-docker $(DIAGRAM_OUT)
+
+$(DIAGRAM_DIR)/out/%.png: $(DIAGRAM_DIR)/%.puml $(DIAGRAM_STAMP)
+	@docker run --rm -v "$(CURDIR)/$(DIAGRAM_DIR):/work" -w /work \
+		--user $$(id -u):$$(id -g) -e HOME=/tmp -e _JAVA_OPTIONS=-Duser.home=/tmp \
+		plantuml/plantuml:$(PLANTUML_VERSION) -tpng -o out $(notdir $<)
+
+$(DIAGRAM_STAMP):
+	@mkdir -p $(DIAGRAM_DIR)/out
+	@rm -f $(DIAGRAM_DIR)/out/.plantuml-*.stamp
+	@touch $@
+
+#diagrams-check: @ Verify committed PlantUML PNGs match current source (CI drift gate)
+diagrams-check: diagrams
+	@git diff --exit-code -- $(DIAGRAM_DIR)/out || { \
+		echo "ERROR: PlantUML source changed but rendered PNGs not regenerated. Run 'make diagrams' and commit docs/diagrams/out."; \
+		exit 1; \
+	}
+
+#diagrams-clean: @ Remove rendered diagram artefacts
+diagrams-clean:
+	@rm -rf $(DIAGRAM_DIR)/out
+
 #check-node-alignment: @ Fail if the Node major drifts across .mise.toml, .node-version, and both Dockerfiles
 check-node-alignment:
 	@set -euo pipefail; \
@@ -185,8 +221,8 @@ check-node-alignment:
 	fi; \
 	echo "Node major aligned across all pins ($$mise_major)."
 
-#static-check: @ Composite quality gate: node-alignment + lint + vulncheck + trivy-fs + trivy-config + secrets + mermaid-lint + deps-prune-check
-static-check: check-node-alignment lint vulncheck trivy-fs trivy-config secrets mermaid-lint deps-prune-check
+#static-check: @ Composite quality gate: node-alignment + lint + vulncheck + trivy-fs + trivy-config + secrets + mermaid-lint + diagrams-check + deps-prune-check
+static-check: check-node-alignment lint vulncheck trivy-fs trivy-config secrets mermaid-lint diagrams-check deps-prune-check
 
 #format: @ Run prettier format
 format: install
@@ -526,7 +562,7 @@ cleanup-images:
 	done
 
 .PHONY: help deps deps-act deps-hadolint deps-k8s deps-trivy deps-secrets deps-playwright clean install build lint vulncheck \
-	trivy-fs trivy-config secrets mermaid-lint check-node-alignment static-check format check upgrade \
+	trivy-fs trivy-config secrets mermaid-lint diagrams diagrams-check diagrams-clean check-node-alignment static-check format check upgrade \
 	test test-watch test-coverage integration-test e2e e2e-browser run \
 	image-build image-build-prod image-run image-stop docker-smoke-test container-structure-test container-structure-test-only dast dast-scan _require-docker \
 	ci ci-run ci-run-tag release tag-delete \

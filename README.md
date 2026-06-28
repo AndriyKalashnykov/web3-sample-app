@@ -9,19 +9,7 @@ Reference **React 19 SPA** that reads **ETH and DAI ERC-20 balances** from Ether
 
 Ships a **four-layer test pyramid** (Vitest unit/component + real-RPC integration, KinD curl e2e, Playwright Chromium e2e) and a **supply-chain-hardened GitHub Actions pipeline**: Trivy fs/config/image scans, gitleaks, OWASP ZAP **DAST**, container-structure-test + SPDX SBOM, **cosign keyless OIDC signing** — all tools **mise**-pinned and updates driven by **Renovate**.
 
-```mermaid
-C4Context
-    title System Context — Web3 Sample App
-
-    Person(user, "End User", "Browser, supplies an Ethereum address")
-    System(spa, "Web3 Sample App", "React 19 SPA, viem 2, Caddy 2-served")
-    System_Ext(rpc, "Ethereum JSON-RPC", "viem PublicClient, mainnet, http transport via VITE_RPCENDPOINT")
-    System_Ext(dai, "DAI ERC-20 Contract", "0x6B17…1d0F on Ethereum mainnet")
-
-    Rel(user, spa, "Uses", "HTTPS")
-    Rel(spa, rpc, "getBalance / getBlockNumber", "JSON-RPC over HTTPS")
-    Rel(spa, dai, "balanceOf(address)", "Contract call via JSON-RPC")
-```
+<p align="center"><img src="docs/diagrams/out/c4-context.png" alt="System Context — Web3 Sample App (C4: End User → React SPA → Ethereum JSON-RPC + DAI contract)" width="900"></p>
 
 | Component | Technology |
 |-----------|------------|
@@ -118,33 +106,11 @@ Source: [`src/service/ether/ether.ts`](src/service/ether/ether.ts) and [`src/com
 
 ### Deployment topology (KinD)
 
-```mermaid
-C4Deployment
-  title Deployment — KinD + cloud-provider-kind LoadBalancer
-
-  Person(user, "End User", "Browser")
-
-  Deployment_Node(host, "Developer Host", "Linux + Docker; kind Docker network") {
-    Container(envoy, "cloud-provider-kind + kindccm envoy", "Per-Service LB proxy on the kind Docker network")
-    Deployment_Node(cluster, "KinD cluster (namespace: web3)", "kindest/node") {
-      Deployment_Node(pod, "Pod (Deployment, replicas=1)") {
-        Container(caddy, "web3-sample-app", "Caddy 2 on :8080; seed-html initContainer seeds assets into emptyDir, then envsubst /config.js at boot")
-      }
-      ContainerDb(cm, "ConfigMap", "web3-sample-app-config: VITE_RPCENDPOINT, VITE_BASE_URL, PORT")
-      Container(svc, "K8s Service", "type: LoadBalancer, port 8080 → pod :8080")
-    }
-  }
-
-  System_Ext(rpc, "Ethereum JSON-RPC", "via VITE_RPCENDPOINT")
-
-  Rel(user, envoy, "HTTP", "to LB IP:8080")
-  Rel(envoy, svc, "Routes to")
-  Rel(svc, caddy, "Routes to")
-  Rel(caddy, cm, "Reads env from", "envFrom")
-  Rel(caddy, rpc, "JSON-RPC", "via window.__CONFIG__")
-```
+<img src="docs/diagrams/out/c4-deployment.png" alt="Deployment — KinD + cloud-provider-kind LoadBalancer: End User → envoy → Service → Caddy pod (ConfigMap envFrom) → Ethereum JSON-RPC" width="820">
 
 The `seed-html` init container copies the baked SPA bundle (`assets/`, `index.html`, and `config.js.template`) from the read-only image filesystem into a writable `emptyDir` mounted at `/srv`. The main container's `start-caddy.sh` then runs `envsubst` against `config.js.template` only (variables restricted to `$VITE_RPCENDPOINT $VITE_BASE_URL`) and writes the result to `/srv/config.js`. The SPA reads the substituted values via `window.__CONFIG__` at boot. The `assets/` JS bundles AND `index.html` are byte-identical across environments, so consumers can verify by digest and Trivy/Cosign signatures stay consistent. This is what makes "build once, configure at deploy time" work despite `readOnlyRootFilesystem: true` on the main container — and the initContainer image MUST stay in lockstep with the main container image (both are patched to the same tag by `kind-deploy` via `KIND_IMAGE_PATCH`).
+
+> The C4 Context (top) and Deployment diagrams are rendered from [`docs/diagrams/c4-context.puml`](docs/diagrams/c4-context.puml) and [`docs/diagrams/c4-deployment.puml`](docs/diagrams/c4-deployment.puml) (C4-PlantUML). Edit the `.puml` source and regenerate with `make diagrams`; `make diagrams-check` (part of `static-check`) fails CI if the committed PNGs drift from source.
 
 ## Testing
 

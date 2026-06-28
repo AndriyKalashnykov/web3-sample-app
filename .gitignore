@@ -38,3 +38,6 @@ test-results/
 zap-output/
 # Claude Code scheduled-task lock
 .claude/
+
+# PlantUML diagram render sentinel (a re-render trigger, not an artifact)
+docs/diagrams/out/.plantuml-*.stamp

@@ -71,6 +71,14 @@
       "datasourceTemplate": "github-releases",
       "depNameTemplate": "caddyserver/caddy",
       "extractVersionTemplate": "^v(?<version>.*)$"
+    },
+    {
+      "customType": "regex",
+      "description": "Track the C4-PlantUML stdlib version in the `!include` URLs of docs/diagrams/*.puml. A bump changes the rendered diagrams' macro library, so the committed PNGs MUST be regenerated (`make diagrams`) on the bump PR — diagrams-check (in static-check, which the ci.yml changes-filter re-includes .puml into) blocks the merge until they are.",
+      "managerFilePatterns": ["/^docs/diagrams/.*\\.puml$/"],
+      "matchStrings": ["C4-PlantUML/(?<currentValue>v[0-9][^/]+)/"],
+      "datasourceTemplate": "github-tags",
+      "depNameTemplate": "plantuml-stdlib/C4-PlantUML"
     }
   ],
   "packageRules": [
