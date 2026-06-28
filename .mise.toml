@@ -39,8 +39,10 @@ pnpm = "11.8.0"
 # Tracked: github-tags github.com/GoogleContainerTools/container-structure-test
 "aqua:GoogleContainerTools/container-structure-test" = "1.22.1"
 
-# Tracked: npm registry (renovate package).
-"npm:renovate" = "43.235.1"
+# Note: the Renovate CLI itself is intentionally NOT pinned here. It lives as the
+# RENOVATE_VERSION Makefile constant (npm datasource, fetched on demand via
+# `mise exec`) so `mise install` does not eagerly reinstall its ~600-package npm
+# tree on every `make deps`. See Makefile + renovate.json (matchDepNames:renovate).
 
 # Note: cloud-provider-kind runs as a Docker container (registry.k8s.io/...)
 # pinned via CLOUD_PROVIDER_KIND_VERSION in the Makefile + Renovate.

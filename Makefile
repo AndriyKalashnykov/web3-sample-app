@@ -28,6 +28,13 @@ ZAP_VERSION := 2.17.0
 # renovate: datasource=docker depName=registry.k8s.io/cloud-provider-kind/cloud-controller-manager
 CLOUD_PROVIDER_KIND_VERSION := v0.10.0
 
+# Renovate CLI version — pinned HERE (not in .mise.toml) so `mise install` does
+# not eagerly reinstall renovate's ~600-package npm tree on every `make deps`.
+# `renovate-validate` fetches it on demand via `mise exec`. Self-bump throttled
+# to weekly in renovate.json (matchDepNames:["renovate"]).
+# renovate: datasource=npm depName=renovate
+RENOVATE_VERSION := 43.235.1
+
 KIND_CLUSTER_NAME := $(APP_NAME)
 K8S_NAMESPACE     := web3
 
@@ -98,6 +105,11 @@ deps-trivy: deps
 #deps-secrets: @ (alias for deps) Install gitleaks for secret scanning
 deps-secrets: deps
 
+# Internal guard: fail fast with a clear message when Docker (a host prerequisite,
+# not mise-managed) is missing. Wired as a prerequisite to docker-using targets.
+_require-docker:
+	@command -v docker >/dev/null 2>&1 || { echo "ERROR: docker is required for this target. Install Docker: https://docs.docker.com/get-docker/"; exit 1; }
+
 #clean: @ Cleanup build artifacts
 clean:
 	@rm -rf node_modules/ dist/ zap-output/ e2e/playwright-report/ e2e/test-results/
@@ -142,7 +154,7 @@ secrets: deps-secrets
 	@gitleaks detect --no-banner --redact --source .
 
 #mermaid-lint: @ Validate Mermaid blocks in markdown files via official CLI
-mermaid-lint:
+mermaid-lint: _require-docker
 	@set -euo pipefail; \
 	IMAGE="minlag/mermaid-cli:$(MERMAID_CLI_VERSION)"; \
 	for attempt in 1 2 3; do \
@@ -246,12 +258,19 @@ run: install
 	@pnpm dev
 
 #image-build: @ Build a dev Docker image
-image-build:
+image-build: _require-docker
 	@docker buildx build --load -t $(APP_NAME):$(CURRENTTAG) .
 
+# Optional buildx cache flags. EMPTY by default so local builds use the plain
+# docker driver (no gha backend, no behavior change). CI's e2e job sets this to
+# `--cache-from type=gha --cache-to type=gha,mode=max` (with setup-buildx-action +
+# the exported runtime tokens) so the prod-image build reuses cached layers across
+# runs AND across `make e2e` + `make e2e-browser` in the same job.
+DOCKER_BUILD_CACHE ?=
+
 #image-build-prod: @ Build a production Docker image (Dockerfile.prod)
-image-build-prod:
-	@docker buildx build --load -t $(APP_NAME):$(CURRENTTAG) -f Dockerfile.prod .
+image-build-prod: _require-docker
+	@docker buildx build --load $(DOCKER_BUILD_CACHE) -t $(APP_NAME):$(CURRENTTAG) -f Dockerfile.prod .
 
 #image-run: @ Run the locally-built image on port 8080
 image-run: image-stop
@@ -261,9 +280,17 @@ image-run: image-stop
 image-stop:
 	@docker stop $(APP_NAME) || true
 
-#container-structure-test: @ Validate prod image structure (USER, entrypoint, labels, files, caddy version)
-container-structure-test: deps image-build-prod
-	@container-structure-test test --image $(APP_NAME):$(CURRENTTAG) --config container-structure-test.yaml
+# Image validated by container-structure-test. Defaults to the locally-built tag;
+# CI overrides with CST_IMAGE=web3-sample-app:scan to reuse the already-built
+# scan image (so the command + config are single-sourced here, no CI drift).
+CST_IMAGE ?= $(APP_NAME):$(CURRENTTAG)
+
+#container-structure-test: @ Build prod image then validate its structure (USER, entrypoint, labels, files, caddy version)
+container-structure-test: deps image-build-prod container-structure-test-only
+
+#container-structure-test-only: @ Validate an already-built image's structure (override CST_IMAGE; CI calls this against the scan image)
+container-structure-test-only: _require-docker
+	@container-structure-test test --image $(CST_IMAGE) --config container-structure-test.yaml
 
 #docker-smoke-test: @ Build prod image, run it on 8080, probe /internal/isalive (mirrors CI Gate 3)
 docker-smoke-test: image-build-prod
@@ -284,7 +311,7 @@ docker-smoke-test: image-build-prod
 	echo "PASS: $(APP_NAME) container booted Caddy successfully"
 
 #dast-scan: @ Run OWASP ZAP baseline against an already-running smoke container on :8080 (CI gate)
-dast-scan:
+dast-scan: _require-docker
 	@mkdir -p zap-output && chmod 777 zap-output
 	@docker run --rm --network host \
 		-v "$(PWD)/zap-output:/zap/wrk:rw" \
@@ -457,14 +484,19 @@ deps-prune-check: install
 		exit 1; \
 	fi
 
-#renovate-validate: @ Validate Renovate configuration (renovate provided by mise via npm:renovate)
+#renovate-validate: @ Validate Renovate configuration (renovate fetched on demand via mise exec, not eagerly installed)
 renovate-validate: deps
-	@renovate --platform=local
+	@mise exec "npm:renovate@$(RENOVATE_VERSION)" -- renovate --platform=local
 
-#cleanup-runs: @ Delete workflow runs older than 7 days (keeps at least 5)
+#cleanup-runs: @ Delete workflow runs older than 7 days (keeps newest 5 PER workflow; never deletes open-PR runs)
 cleanup-runs:
-	@gh run list --limit 100 --json databaseId,createdAt,status \
-		--jq '[.[] | select(.createdAt < (now - 7*24*3600 | strftime("%Y-%m-%dT%H:%M:%SZ")))] | sort_by(.createdAt) | reverse | .[5:] | .[].databaseId' \
+	@set -euo pipefail; \
+	KEEP=5; \
+	CUTOFF=$$(date -u -d '7 days ago' +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -v-7d +%Y-%m-%dT%H:%M:%SZ); \
+	OPEN_SHAS=$$(gh pr list --state open --json headRefOid --jq '[.[].headRefOid]' 2>/dev/null || echo '[]'); \
+	[ -n "$$OPEN_SHAS" ] || OPEN_SHAS='[]'; \
+	gh run list --limit 300 --json databaseId,createdAt,workflowName,headSha \
+		| jq -r --argjson keep "$$KEEP" --arg cutoff "$$CUTOFF" --argjson open "$$OPEN_SHAS" 'group_by(.workflowName) | map(sort_by(.createdAt) | reverse | .[$$keep:][]) | .[] | select(.createdAt < $$cutoff and (.headSha as $$s | ($$open | index($$s)) | not)) | .databaseId' \
 	| while read -r run_id; do \
 		echo "Deleting run $$run_id"; \
 		gh run delete "$$run_id" || true; \
@@ -496,7 +528,7 @@ cleanup-images:
 .PHONY: help deps deps-act deps-hadolint deps-k8s deps-trivy deps-secrets deps-playwright clean install build lint vulncheck \
 	trivy-fs trivy-config secrets mermaid-lint check-node-alignment static-check format check upgrade \
 	test test-watch test-coverage integration-test e2e e2e-browser run \
-	image-build image-build-prod image-run image-stop docker-smoke-test container-structure-test dast dast-scan \
+	image-build image-build-prod image-run image-stop docker-smoke-test container-structure-test container-structure-test-only dast dast-scan _require-docker \
 	ci ci-run ci-run-tag release tag-delete \
 	kind-up kind-down kind-create kind-destroy kind-cloud-provider-start kind-cloud-provider-stop \
 	kind-deploy kind-undeploy kind-redeploy deps-prune deps-prune-check renovate-validate \

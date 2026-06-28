@@ -72,6 +72,16 @@ describe('ether service (negative paths against real RPC)', () => {
     )
   })
 
+  it('getETHBalance (service entry) rejects for a malformed address before any RPC roundtrip', async () => {
+    // Exercises the REAL public service wrapper — not a hand-built client.
+    // getETHBalance calls getAddress() first, so a malformed input rejects at the
+    // service boundary, proving error propagation through the exported API (the
+    // unit suite only covers this path with a mocked client).
+    await expect(getETHBalance('not-an-address')).rejects.toThrow(
+      /is invalid|invalid|not a valid/i,
+    )
+  })
+
   it('rejects with a network error when the configured RPC URL is unreachable', async () => {
     const badClient = createPublicClient({
       chain: mainnet,
