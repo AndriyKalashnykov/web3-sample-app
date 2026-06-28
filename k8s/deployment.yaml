@@ -34,7 +34,7 @@ spec:
       # needs no writable state directories beyond /srv and /tmp.
       initContainers:
         - name: seed-html
-          image: ghcr.io/andriykalashnykov/web3-sample-app:0.0.18
+          image: ghcr.io/andriykalashnykov/web3-sample-app:0.0.18@sha256:85426882f4cc26e3198211d0e42d94bf938374ea9f85b4488668ab1b2285b8fc
           imagePullPolicy: IfNotPresent
           command:
             - sh
@@ -59,7 +59,7 @@ spec:
       containers:
         - name: web3-sample-app
           # Renovate-tracked via the kubernetes manager (kubernetes.managerFilePatterns scopes it to k8s/**/*.yaml).
-          image: ghcr.io/andriykalashnykov/web3-sample-app:0.0.18
+          image: ghcr.io/andriykalashnykov/web3-sample-app:0.0.18@sha256:85426882f4cc26e3198211d0e42d94bf938374ea9f85b4488668ab1b2285b8fc
           imagePullPolicy: IfNotPresent
           envFrom:
             - configMapRef:
