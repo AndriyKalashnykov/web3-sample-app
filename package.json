@@ -33,6 +33,7 @@
     "viem": "^2.53.1"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.12.1",
     "@playwright/test": "1.61.0",
     "@tailwindcss/postcss": "4.3.1",
     "@testing-library/jest-dom": "6.9.1",

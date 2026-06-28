@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 All commands go through the Makefile. Use `make help` to list targets.
 
 ```bash
-make deps           # install mise + all pinned tools (node, pnpm, hadolint, kubectl, kind, yq, trivy, gitleaks, act, container-structure-test, renovate)
+make deps           # install mise + all pinned tools (node, pnpm, hadolint, kubectl, kind, yq, trivy, gitleaks, act, container-structure-test)
 make install        # pnpm install (uses --frozen-lockfile when CI=true)
 make build          # tsc + vite build (depends on install)
 make lint           # prettier --check + hadolint
@@ -40,7 +40,9 @@ make cleanup-images # delete untagged GHCR images, keep 5 (called by cleanup-ima
 
 ## Tool Versions (mise)
 
-`.mise.toml` is the single source of truth for every pinned tool: Node.js, pnpm, hadolint, kubectl, kind, yq, Trivy, gitleaks, act, container-structure-test, and `npm:renovate`. `make deps` bootstraps mise via `https://mise.run` (installs to `~/.local/bin`, no sudo) and then runs `mise install` to provision the rest. CI uses `jdx/mise-action` so local and CI read the same `.mise.toml`. Renovate tracks updates via the native `mise` manager.
+`.mise.toml` is the single source of truth for every pinned tool: Node.js, pnpm, hadolint, kubectl, kind, yq, Trivy, gitleaks, act, container-structure-test. `make deps` bootstraps mise via `https://mise.run` (installs to `~/.local/bin`, no sudo) and then runs `mise install` to provision the rest. CI uses `jdx/mise-action` so local and CI read the same `.mise.toml`. Renovate tracks updates via the native `mise` manager.
+
+The Renovate CLI itself is deliberately **not** in `.mise.toml` — it is pinned as the `RENOVATE_VERSION` Makefile constant (`# renovate: datasource=npm depName=renovate`) and fetched on demand by `make renovate-validate` via `mise exec`, so `mise install` does not eagerly reinstall renovate's ~600-package npm tree on every `make deps`. Its near-daily self-bump is throttled to weekly in `renovate.json` (`matchDepNames:["renovate"]`).
 
 Three Docker-image versions stay pinned as Makefile constants (with `# renovate:` annotations) because mise can't manage Docker images: `MERMAID_CLI_VERSION` (mermaid lint), `ZAP_VERSION` (DAST), `CLOUD_PROVIDER_KIND_VERSION` (KinD LoadBalancer controller). `KIND_NODE_IMAGE` is also a Makefile constant but is bumped together with the `aqua:kubernetes-sigs/kind` mise pin (see KinD release notes for matched node image — not independently trackable).
 
@@ -53,7 +55,7 @@ Four-layer test pyramid. Each layer has its own Makefile target, vitest/Playwrig
 | Unit + Component | `make test` | `vitest.config.ts` (excludes `**/*.integration.test.*`) | `src/store/models/__tests__/`, `src/service/ether/__tests__/ether.test.ts`, `src/components/__tests__/` | ~1s | Pure functions, Redux slices, mocked ether service, components rendered via `renderWithProviders` |
 | Integration | `make integration-test` | `vitest.integration.config.ts` (`include: ['**/*.integration.test.ts']`, 30s timeout, node env) | `src/service/ether/__tests__/ether.integration.test.ts` | ~5s | Ether service against the real `VITE_RPCENDPOINT` (block fetch, ETH/DAI balance, malformed-input negative paths) |
 | E2E (curl) | `make e2e` | `e2e/e2e-test.sh` | KinD + cloud-provider-kind LoadBalancer (kind Docker network IP) | ~30s | Caddy routes (`/internal/isalive`, `/internal/isready`, `/publicnode` → 307, SPA fallback, missing asset 404) + verifies `start-caddy.sh` substituted `VITE_RPCENDPOINT` into `/config.js` (also runs `make e2e-browser` in CI — Playwright Chromium against deployed SPA, asserts real RPC roundtrip updates block counter) |
-| E2E (browser) | `make e2e-browser` | `e2e/playwright.config.ts` + `e2e/account-form.spec.ts` | KinD + cloud-provider-kind + Playwright Chromium | ~45s | AccountForm renders, real RPC roundtrip updates the displayed block number |
+| E2E (browser) | `make e2e-browser` | `e2e/playwright.config.ts` + `e2e/account-form.spec.ts` | KinD + cloud-provider-kind + Playwright Chromium | ~45s | AccountForm renders; real ETH + DAI RPC roundtrips update the block counter AND render a well-formed numeric balance; an `@axe-core/playwright` scan asserts no critical/serious WCAG2A/AA a11y violations |
 
 Notes:
 - `make test` and `make integration-test` are independent — the `test` job runs unit + component (no network), `integration-test` job runs the real-RPC suite (needs outbound HTTPS).
@@ -98,29 +100,29 @@ Vite (oxc minifier, not terser). Console and debugger statements are stripped in
 
 ## CI/CD
 
-- **ci.yml** job DAG: `changes` → `static-check` → (`test`, `integration-test`, `build` parallel) → (`e2e`, `dast`, `docker` parallel) → `ci-pass` (aggregator).
-  - `changes`: job-level path filter via `dorny/paths-filter`. Doc-only diffs (`**.md` outside `CLAUDE.md`, `docs/**`, `LICENSE`, `**.png`, etc.) set `outputs.code = false` → every heavy job short-circuits via `if: needs.changes.outputs.code == 'true'`. Tag pushes force `code = true` to avoid the empty-diff escape hatch. The workflow itself always runs so `ci-pass` always reports a status — Repository-Rulesets-safe.
+- **ci.yml** job DAG: `changes` → `static-check` → (`test`, `integration-test`, `build` parallel) → (`e2e`, `dast`, `docker` parallel) → `ci-pass` (aggregator). A lightweight `mermaid-lint` job also runs off `changes` for **docs-only** changes — README mermaid blocks are docs-excluded from `code`, so `static-check`'s mermaid-lint never sees them; on code changes `static-check` covers mermaid instead, so the job is gated `docs == 'true' && code != 'true'`.
+  - `changes`: job-level path filter via `dorny/paths-filter`. Doc-only diffs (`**.md` outside `CLAUDE.md`, `docs/**`, `specs/**`, `benchmarks/**`, `LICENSE`, `**.png`, etc.) set `outputs.code = false` → every heavy job short-circuits via `if: needs.changes.outputs.code == 'true'`. A second `outputs.docs` (any `**.md`) gates the `mermaid-lint` job. Tag pushes force `code = true` to avoid the empty-diff escape hatch. The workflow itself always runs so `ci-pass` always reports a status — Repository-Rulesets-safe.
   - `static-check`: composite of lint + vulncheck + trivy-fs + trivy-config + secrets + mermaid-lint + deps-prune-check via `make static-check`.
   - `integration-test`: real-RPC vitest suite (`make integration-test`).
   - `e2e`: KinD + `cloud-provider-kind` (real LoadBalancer Service IPs on the kind Docker network) + `make e2e` (curl) + `make e2e-browser` (Playwright Chromium). Gated `if: vars.ACT != 'true'`.
-  - `dast`: parallel with `docker`/`e2e`. Builds `:scan` image via shared cache, boots it, runs OWASP ZAP baseline (`-I`, FAIL-only blocking). Cached ZAP image (~3.4GB). Gated `if: vars.ACT != 'true'`. Uploads HTML/JSON/MD report.
-  - `docker`: Pattern A. Validation gates (Trivy image scan, smoke test, image build) run on **every push**; publish + cosign sign-by-digest are step-level gated to tag pushes only — catches build / signing regressions before tag day instead of on it.
+  - `dast`: **tag-push only** (mirrors `docker` — `startsWith(github.ref, 'refs/tags/')`). Builds `:scan` image via shared cache, boots it, runs OWASP ZAP baseline (`-I`, FAIL-only blocking) at release. Cached ZAP image (~3.4GB). Also gated `if: vars.ACT != 'true'`. Uploads HTML/JSON/MD report. (Moved off every-push to keep ordinary commits cheap; the image is scanned for CVEs by `docker`'s Trivy gate at the same release.)
+  - `docker`: **tag-push only** (job-level `if: … && startsWith(github.ref, 'refs/tags/')`). Build, Trivy image scan, container-structure-test, SBOM, smoke test, publish, and cosign sign-by-digest all run **only on release tags** (`make release` cuts a `vN.N.N` tag) — no image is built/scanned on ordinary commits. The Dockerfile is still compiled on every push by the `e2e` job (KinD deploy builds the prod image), so a broken Dockerfile is caught pre-tag there; only the image scan / structure-test / SBOM / publish are tag-gated.
     - Gate 1: Build for scan (`load: true`, linux/amd64) into local docker daemon
     - Gate 2: Trivy image scan (`CRITICAL,HIGH` blocking, `vuln,secret,misconfig` scanners)
-    - Gate 2.5: container-structure-test (`make container-structure-test` config — USER 1000, entrypoint, OCI labels, runtime files, CVE-patched caddy version)
+    - Gate 2.5: container-structure-test (`make container-structure-test-only CST_IMAGE=web3-sample-app:scan` — reuses the scan image; single-sources the command + `container-structure-test.yaml` config; USER 1000, entrypoint, OCI labels, runtime files, CVE-patched caddy version)
     - Gate 2.7: SPDX SBOM via Trivy → uploaded as the `sbom-spdx` artifact (and cosign-attested by digest on tag push). Kept out of the buildx manifest (`sbom: false`) so the GHCR "OS / Arch" tab still renders
     - Gate 3: Smoke test (`docker run` + `curl /internal/isalive`)
-    - Build (push: ${{ tag }}): single-arch (`linux/amd64`; arm64 dropped to keep CI fast), `provenance: false` + `sbom: false` (keeps GHCR "OS / Arch" tab rendering)
+    - Build + push (`push: true` — the job only runs on tags): single-arch (`linux/amd64`; arm64 dropped to keep CI fast), `provenance: false` + `sbom: false` (keeps GHCR "OS / Arch" tab rendering)
     - Cosign keyless OIDC signing by digest on tag push + SPDX SBOM attestation (requires `id-token: write`)
   - `ci-pass`: aggregator gate. Fails if any upstream job failed OR was cancelled.
-- All tools (Node, pnpm, hadolint, kubectl, kind, yq, Trivy, gitleaks, act, **renovate**) come from `.mise.toml` via `jdx/mise-action`. `cloud-provider-kind` runs as a Docker container pinned via `CLOUD_PROVIDER_KIND_VERSION` Makefile constant. `ZAP_VERSION` is duplicated between Makefile and workflow `env:` block; both annotations are tracked by Renovate's workflow custom-regex manager so they bump in lockstep.
+- All tools (Node, pnpm, hadolint, kubectl, kind, yq, Trivy, gitleaks, act) come from `.mise.toml` via `jdx/mise-action`. (The Renovate CLI is the `RENOVATE_VERSION` Makefile pin, fetched lazily via `mise exec` — see Tool Versions.) `cloud-provider-kind` runs as a Docker container pinned via `CLOUD_PROVIDER_KIND_VERSION` Makefile constant. `ZAP_VERSION` is duplicated between Makefile and workflow `env:` block; both annotations are tracked by Renovate's workflow custom-regex manager so they bump in lockstep.
 - **cleanup-runs.yml**: Weekly cleanup — `make cleanup-runs` (workflow runs > 7d) + `make cleanup-caches` (caches from merged or deleted branches).
 - **cleanup-images.yml**: Weekly cleanup of untagged GHCR images (`make cleanup-images`).
-- All GitHub Actions pinned to commit SHAs. Renovate manages dependency updates with platform automerge enabled (major updates delayed 3 days).
+- All GitHub Actions pinned to commit SHAs. Renovate manages dependency updates with PR automerge on green CI (`platformAutomerge: false` — race-safe for the required `ci-pass` check; major updates delayed 3 days).
 
 ## Image Publishing & Hardening
 
-The `docker` job in `ci.yml` ships images on tag pushes; on non-tag pushes it runs the same Trivy + smoke + `linux/amd64` validation build with `push: false`. See README "Pre-push image hardening" for the user-facing gate table and `cosign verify` command. To re-harden / extend, run `/harden-image-pipeline`.
+The `docker` job in `ci.yml` builds, scans, and ships images **on tag pushes only** (the whole job is gated `startsWith(github.ref, 'refs/tags/')`). See README "Release image hardening" for the user-facing gate table and `cosign verify` command. To re-harden / extend, run `/harden-image-pipeline`.
 
 `make ci-run-tag` exercises the `docker` job locally under act (synthetic tag-push event); cosign signing fails under act (no OIDC) — expected.
 
@@ -132,13 +134,13 @@ The `docker` job in `ci.yml` ships images on tag pushes; on non-tag pushes it ru
 - **`.dockerignore`**: Excludes `node_modules`, `dist`, `.git`, `e2e`, `zap-output`, `playwright-report`, `test-results`, `.env`.
 - **`.env.example`**: Committed source of truth for operator-tunable values (`VITE_RPCENDPOINT`, `APP_INTERNAL_PORT`, e2e/Make timeouts). Copy to gitignored `.env` to override locally; shell scripts source it, the Makefile mirrors it as `?=` defaults.
 - **`.hadolint.yaml`**: Configures hadolint rule ignores for Dockerfile linting.
-- **`caddy/Caddyfile`**: `admin off` / `auto_https off` / `persist_config off` (no writable state dirs); a single `header { defer … }` block applies CSP + X-Frame-Options + X-Content-Type-Options + Referrer-Policy + COOP/CORP + Permissions-Policy to every response; `handle /assets/*` returns 404 for missing assets (never SPA-fallback) with `Cache-Control: public, max-age=31536000, immutable`; `handle /config.js` adds `Cache-Control: no-store`; `handle /publicnode` is a 307 redirect to `{$PUBLIC_RPC_URL:…}` (env-driven, defaults to the public node); the server listens on `:{$PORT:8080}` (ConfigMap-driven); `handle /internal/{isalive,isready}` use `respond` + `log_skip` (no access-log noise); the catch-all `handle` does `try_files {path} /index.html` for SPA fallback.
+- **`caddy/Caddyfile`**: `admin off` / `auto_https off` / `persist_config off` (no writable state dirs); a single `header { defer … }` block applies CSP + X-Frame-Options + X-Content-Type-Options + Referrer-Policy + COOP/CORP + Permissions-Policy to every response; `handle /assets/*` returns 404 for missing assets (never SPA-fallback) with `Cache-Control: public, max-age=31536000, immutable`; `handle /config.js` adds `Cache-Control: no-store`; `handle /publicnode` is a 307 redirect to `{$PUBLIC_RPC_URL:…}` (env-driven, defaults to the public node); the server listens on `:{$PORT:8080}` (ConfigMap-driven); `handle /internal/{isalive,isready}` use `respond` + `log_skip` (no access-log noise); the catch-all `handle` does `try_files {path} /index.html` for SPA fallback. **By design**, the CSP allows a `connect-src https:` wildcard (keeps `VITE_RPCENDPOINT` runtime-configurable) and omits COEP (it would block the cross-origin RPC fetch); the resulting ZAP `WARN-NEW` advisories are intentional, not findings — the DAST gate is FAIL-only (`FAIL-NEW: 0`).
 - Both Dockerfiles use `pnpm install --frozen-lockfile` and copy lockfiles before source for layer caching.
 
 ## Conventions
 
 - Package manager: **pnpm only** (no `npm`, no `npx` — Makefile uses `pnpm dlx`; Dockerfiles use `corepack enable pnpm`; `packageManager` field in package.json).
-- Tool versioning: **mise** via `.mise.toml` (single source of truth across local + CI). Includes `npm:renovate`, `aqua:` pins for kubectl/kind/yq/hadolint/act/trivy/gitleaks. Docker-image tools (`MERMAID_CLI_VERSION`, `ZAP_VERSION`, `CLOUD_PROVIDER_KIND_VERSION`) stay as Makefile constants (Renovate-tracked) since mise can't manage Docker images directly. `KIND_NODE_IMAGE` is also a Makefile constant but bumped together with `aqua:kubernetes-sigs/kind` per KinD release notes.
+- Tool versioning: **mise** via `.mise.toml` (single source of truth across local + CI). Includes `aqua:` pins for kubectl/kind/yq/hadolint/act/trivy/gitleaks plus core node/pnpm. The Renovate CLI is pinned separately as `RENOVATE_VERSION` in the Makefile (npm datasource, fetched lazily via `mise exec`) so `make deps` doesn't eagerly reinstall its large dependency tree. Docker-image tools (`MERMAID_CLI_VERSION`, `ZAP_VERSION`, `CLOUD_PROVIDER_KIND_VERSION`) stay as Makefile constants (Renovate-tracked) since mise can't manage Docker images directly. `KIND_NODE_IMAGE` is also a Makefile constant but bumped together with `aqua:kubernetes-sigs/kind` per KinD release notes.
 - Multi-session safety: `KIND_CLUSTER_NAME := $(APP_NAME)` and every `kubectl` invocation goes through `KUBECTL := kubectl --context=kind-$(KIND_CLUSTER_NAME)` so a parallel `make` from a sibling KinD project can't silently steer recipes to the wrong cluster.
 - Node.js: pinned in `.mise.toml` (currently `node = "24"`); `.node-version` mirrors the major (`24`) and both Dockerfiles pin `node:24.x`. `make check-node-alignment` (first prerequisite of `static-check`) fails the build if any of these drift, and a Renovate cross-manager group bumps the mise + Dockerfile pins together.
 - TypeScript: **6.x** with `moduleResolution: "bundler"` (no `baseUrl`, no `esModuleInterop`).
@@ -155,7 +157,6 @@ Last reviewed: 2026-06-22 (`/ship-it` follow-up — `@types/node` 25→26 (tsc +
 
 - [ ] **Architecture diagram tech-strings drift** — README's C4 diagrams embed framework version strings (e.g. `"React 19 SPA, viem 2"`, `"Caddy 2 on :8080"`). Renovate cannot update these. Re-run `/architecture-diagrams` after any major bump.
 - [ ] **`.trivyignore` waivers for 3 base-image OS CVEs** — `CVE-2026-45447` (openssl), `CVE-2026-45186` (libexpat), `CVE-2026-6732` (libxml2) are present in the `caddy:2.11.4-alpine`/alpine-3.23 base; fixes are not yet in the alpine 3.23 repo (`apk upgrade` has no newer package), so they're waived with `exp:2026-07-22`. Reachability is nil (caddy is a static Go binary linking none of them). The Dockerfile's `apk --no-cache upgrade` pulls the fixes automatically once alpine ships them — remove the `.trivyignore` entries when `apk upgrade --simulate` shows the patched versions, or the waivers auto-expire on 2026-07-22 (re-evaluate then).
-- The ZAP `WARN-NEW` DAST advisories (CSP `connect-src https:` wildcard, missing COEP) are **intentional, documented design** in `caddy/Caddyfile` — the wildcard keeps `VITE_RPCENDPOINT` runtime-configurable and COEP would block the cross-origin RPC fetch. Not findings; left by design (the DAST gate is FAIL-only, `FAIL-NEW: 0`).
 
 ## Skills
 

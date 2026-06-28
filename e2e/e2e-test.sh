@@ -213,7 +213,10 @@ assert_status GET "$BASE/assets/does-not-exist.js" 404
 # A real hashed asset must be 200 + immutable long-cache.
 assert_real_asset_cached
 
-# Public RPC redirect (Caddy /publicnode -> 307 to public RPC)
+# Public RPC redirect (Caddy /publicnode -> 307 to public RPC). The target is
+# env-driven (`{$PUBLIC_RPC_URL:…}` in the Caddyfile, set by the k8s ConfigMap).
+# This asserts the deployed default; to exercise the override path, deploy with a
+# distinct PUBLIC_RPC_URL in k8s/cm.yaml and re-run — the Location must follow it.
 assert_redirect_target "$BASE/publicnode" 307 "$EXPECTED_RPC_HOST"
 
 # Pattern C runtime config — VITE_RPCENDPOINT must be substituted into the
@@ -232,11 +235,12 @@ assert_config_var_substituted 'VITE_BASE_URL' "$VITE_BASE_URL"
 # loads it on every page render".
 assert_body_contains "$BASE/" '<script src="/config.js"></script>'
 
-# Security headers must reach the client on the SPA root AND on /config.js.
-# The Caddyfile's `header { defer ... }` sets these for every response, but a
-# future handler that calls `header` without `defer` could silently shadow
-# them — assert at the wire.
-for path in "/" "/config.js"; do
+# Security headers must reach the client on the SPA root, /config.js, AND on
+# /internal/* (whose `respond` handler could shadow the deferred set). The
+# Caddyfile's `header { defer ... }` sets these for every response, but a
+# future handler that calls `header`/`respond` without `defer` could silently
+# shadow them — assert at the wire on each handler that emits its own response.
+for path in "/" "/config.js" "/internal/isalive"; do
   assert_header_present "$BASE$path" 'Content-Security-Policy'    "default-src 'self'"
   assert_header_present "$BASE$path" 'X-Frame-Options'           'DENY'
   assert_header_present "$BASE$path" 'X-Content-Type-Options'    'nosniff'
@@ -248,10 +252,26 @@ for path in "/" "/config.js"; do
   assert_header_absent "$BASE$path" 'Server'
 done
 
+# /assets/* defines its OWN `header` block (immutable Cache-Control), the exact
+# shape that can silently shadow the global security-header set. Resolve a real
+# hashed asset and assert the security headers survive on it too.
+HEADER_ASSET=$(curl -sf "$BASE/" | grep -oE '/assets/[A-Za-z0-9._-]+\.js' | head -1 || true)
+if [[ -n "$HEADER_ASSET" ]]; then
+  assert_header_present "$BASE$HEADER_ASSET" 'Content-Security-Policy' "default-src 'self'"
+  assert_header_present "$BASE$HEADER_ASSET" 'X-Content-Type-Options'  'nosniff'
+else
+  echo "FAIL: could not resolve an /assets/*.js path for the header-shadow check"
+  FAIL=$((FAIL + 1))
+fi
+
 # /config.js must be served with Cache-Control: no-store so the browser
 # always re-fetches it on deploy — otherwise a stale runtime config sticks
 # until the user hard-reloads.
 assert_header_present "$BASE/config.js" 'Cache-Control' 'no-store'
+# /config.js is loaded as an external <script> under CSP `script-src 'self'`, so
+# the browser must receive a JavaScript MIME or it refuses to execute it (which
+# would break runtime config silently). Assert the Content-Type at the wire.
+assert_header_present "$BASE/config.js" 'Content-Type' '(text|application)/javascript'
 
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="

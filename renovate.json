@@ -127,6 +127,17 @@
       "description": "Group the caddy version across the Dockerfile.prod FROM digests (dockerfile manager, depName `caddy`) and the `xcaddy build vX.Y.Z` rebuild literal (custom.regex, depName `caddyserver/caddy`) so the rebuilt binary version never drifts from the runtime base. Placed LAST so this groupName wins for caddy over the Docker dependencies group; the FROM lines keep docker:pinDigests (only their datasource is docker), the xcaddy literal does not (github-releases).",
       "matchDepNames": ["caddy", "caddyserver/caddy"],
       "groupName": "caddy"
+    },
+    {
+      "description": "Hold each new aqua: tool version for 3 days. The aqua: pins (trivy, kind, kubectl, gitleaks, act, hadolint, container-structure-test, yq) resolve via the github-tags datasource, and mise's aqua: backend installs from the GitHub Release — which upstreams publish AFTER the git tag. A 3-day buffer lets the Release artifact publish before the PR opens, preventing the tag-before-publish 404 in `mise install`. The major-only buffer does NOT cover aqua minor/patch bumps (e.g. trivy 0.71.0->0.71.1).",
+      "matchManagers": ["mise"],
+      "matchDatasources": ["github-tags"],
+      "minimumReleaseAge": "3 days"
+    },
+    {
+      "description": "Throttle the local Renovate CLI pin (RENOVATE_VERSION in the Makefile, custom.regex manager / npm datasource). Renovate publishes several times a day; the manager-scoped npm.minimumReleaseAge does not apply to a custom.regex pin, so a 7-day buffer keeps this dev-only tool roughly weekly instead of opening a near-daily self-bump PR.",
+      "matchDepNames": ["renovate"],
+      "minimumReleaseAge": "7 days"
     }
   ]
 }

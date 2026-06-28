@@ -35,7 +35,7 @@ C4Context
 | Testing | Vitest 4, React Testing Library, jsdom, Playwright (Chromium) |
 | Container | Builder: `node:24.17.0-alpine`; runtime: `caddy:2.11.4-alpine` (port 8080, runs as UID 1000; `cap_net_bind_service` stripped from the binary so it execs cleanly under `securityContext.capabilities.drop:[ALL]`) |
 | Orchestration | Kubernetes (manifests under `k8s/`); local KinD via Makefile |
-| CI/CD | GitHub Actions, Renovate (platform automerge) |
+| CI/CD | GitHub Actions, Renovate (PR automerge on green CI) |
 | Code quality | Prettier, hadolint, Trivy (fs+config), gitleaks |
 | Tool versioning | mise (single source of truth in `.mise.toml`) |
 
@@ -334,8 +334,8 @@ GitHub Actions runs on every push to `main`, every tag `v*`, every pull request,
 | **integration-test** | after static-check | `make integration-test` (real-RPC integration suite) |
 | **build** | after static-check | `make build`; uploads `dist/` artifact |
 | **e2e** | after build + test (skipped under act) | KinD + cloud-provider-kind LoadBalancer + curl assertions + Playwright browser e2e — `make e2e` and `make e2e-browser` |
-| **dast** | after build + test (skipped under act) | OWASP ZAP baseline scan against booted container; ZAP image cached |
-| **docker** | after static-check + build + test | Validates Trivy image scan + container-structure-test + SPDX SBOM + smoke test + `linux/amd64` build on every push; pushes to GHCR + cosign keyless signing + SBOM attestation only on tag push |
+| **dast** | tag pushes only (after build + test; skipped under act) | OWASP ZAP baseline scan against booted container at release; ZAP image cached |
+| **docker** | tag pushes only (after static-check + build + test) | Builds + Trivy image scan + container-structure-test + SPDX SBOM + smoke test + `linux/amd64` build + push to GHCR + cosign keyless signing + SBOM attestation — all gated to release tags (`v*`). No image is built on ordinary commits |
 | **ci-pass** | always (after all above) | Aggregator gate; fails if any upstream job failed or was cancelled |
 
 #### Required Secrets and Variables
@@ -348,9 +348,9 @@ GitHub Actions runs on every push to `main`, every tag `v*`, every pull request,
 | `vars.HEALTHCHECK_HOST` | Variable (optional) | `docker`, `dast` | Overrides the host the smoke/DAST probe targets. Defaults to `localhost` |
 | `secrets.GITHUB_TOKEN` | Secret (auto) | `docker`, cleanup workflows | Provided by GitHub Actions; used to push to GHCR and call the API |
 
-### Pre-push image hardening
+### Release image hardening
 
-The `docker` job runs the following gates **before** any image is pushed to GHCR. Any failure blocks the release.
+On a release tag (`v*`), the `docker` job runs the following gates in order **before** the image is pushed to GHCR. Any failure blocks the publish. (On ordinary commits this job is skipped — no image is built.)
 
 | # | Gate | Catches | Tool |
 |---|------|---------|------|
@@ -362,7 +362,7 @@ The `docker` job runs the following gates **before** any image is pushed to GHCR
 | 4 | Build + push (`linux/amd64`) | Publishes the image with `cache-from: type=gha` (~95% cache hit from Gate 1) | `docker/build-push-action` |
 | 5 | **Cosign keyless OIDC signing** | Sigstore signature on the manifest digest (Rekor transparency log) | `sigstore/cosign-installer` + `cosign sign --yes <tag>@<digest>` |
 
-The parallel `dast` job adds:
+The `dast` job (also tag-push only) adds:
 
 | Gate | Catches | Tool |
 |------|---------|------|
@@ -397,7 +397,7 @@ Uses [act](https://github.com/nektos/act) with a randomized artifact-server port
 
 ### Dependency management
 
-[Renovate](https://docs.renovatebot.com/) manages dependency updates with platform automerge enabled. Updates automerge after CI passes; major updates wait 3 days for stability. Tool versions in `.mise.toml` are tracked by Renovate's `mise` manager (and the `# renovate:` inline annotations on aqua: pins).
+[Renovate](https://docs.renovatebot.com/) manages dependency updates with PR automerge. Updates merge automatically once the required `ci-pass` check is green — platform automerge is intentionally **off** (`platformAutomerge: false`), so Renovate merges via its own run after re-confirming the check rather than racing GitHub's native auto-merge before the check registers. Major updates wait 3 days for stability. Tool versions in `.mise.toml` are tracked by Renovate's `mise` manager (and the `# renovate:` inline annotations on aqua: pins).
 
 ## Release
 
@@ -411,3 +411,11 @@ Uses [act](https://github.com/nektos/act) with a randomized artifact-server port
    ```bash
    make tag-delete TAG=v0.0.1
    ```
+
+## Contributing
+
+Contributions are welcome. Open an issue to discuss a change, or send a pull request — CI (`make ci`) must pass before merge.
+
+## License
+
+Released under the [MIT License](./LICENSE).

@@ -38,6 +38,9 @@ jobs:
       # On tag pushes the diff against `main` may be empty (the tag points at
       # the same SHA), which would skip everything — force `code=true`.
       code: ${{ startsWith(github.ref, 'refs/tags/') && 'true' || steps.filter.outputs.code }}
+      # Markdown changes gate a lightweight mermaid-lint job (README mermaid is
+      # docs-excluded from `code`, so static-check's mermaid-lint never sees it).
+      docs: ${{ steps.filter.outputs.docs }}
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -50,8 +53,26 @@ jobs:
           base: ${{ github.event_name == 'push' && 'main' || '' }}
           filters: |
             code:
-              - '!(**.md|docs/**|LICENSE|.gitignore|.claudeignore|.claude/**|**.png|**.jpg|**.gif|**.svg)'
+              - '!(**.md|docs/**|specs/**|benchmarks/**|LICENSE|.gitignore|.claudeignore|.claude/**|**.png|**.jpg|**.gif|**.svg)'
               - 'CLAUDE.md'
+            docs:
+              - '**.md'
+
+  mermaid-lint:
+    # README/docs mermaid blocks are docs-excluded from `code`, so a docs-only
+    # change skips static-check (which runs mermaid-lint). Gate the lint here for
+    # docs-only changes so a broken README diagram can't ship ungated. Code
+    # changes already run mermaid-lint inside static-check, so skip it there.
+    needs: [changes]
+    if: ${{ !failure() && !cancelled() && needs.changes.outputs.docs == 'true' && needs.changes.outputs.code != 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Mermaid lint
+        run: make mermaid-lint
 
   static-check:
     needs: [changes]
@@ -127,9 +148,23 @@ jobs:
     if: ${{ !failure() && !cancelled() && needs.changes.outputs.code == 'true' && vars.ACT != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # Reuse cached prod-image layers across runs (and across make e2e +
+    # make e2e-browser) so the e2e job doesn't cold-build Dockerfile.prod each run.
+    env:
+      DOCKER_BUILD_CACHE: "--cache-from type=gha --cache-to type=gha,mode=max"
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
+
+      # Exports ACTIONS_RUNTIME_TOKEN + ACTIONS_CACHE_URL so the Makefile's raw
+      # `docker buildx build --cache-to type=gha` (DOCKER_BUILD_CACHE) can reach the
+      # GitHub Actions cache. docker/build-push-action does this internally; a raw
+      # buildx invocation needs the runtime exported explicitly.
+      - name: Export Actions cache runtime
+        uses: crazy-max/ghaction-github-runtime@04d248b84655b509d8c44dc1d6f990c879747487 # v4.0.0
 
       - name: Set up mise
         uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
@@ -200,11 +235,14 @@ jobs:
           retention-days: 7
 
   docker:
-    # Pattern A: validate on every push (Gates 1-3 + linux/amd64 validation
-    # build), publish + sign only on tag pushes. Catches regressions before
-    # release day instead of on it.
+    # Build, scan, and publish the production image ONLY on tag pushes (releases
+    # — `make release` cuts a `vN.N.N` tag). On non-tag pushes this whole job is
+    # skipped, so no image is built/scanned/published on ordinary commits.
+    # NOTE: the Dockerfile is still exercised on every push by the `e2e` job
+    # (KinD deploy builds the prod image), so a broken Dockerfile is still caught
+    # pre-tag there — but the image SCAN / structure-test / SBOM only run on tags.
     needs: [changes, static-check, build, test]
-    if: ${{ !failure() && !cancelled() && needs.changes.outputs.code == 'true' }}
+    if: ${{ !failure() && !cancelled() && needs.changes.outputs.code == 'true' && startsWith(github.ref, 'refs/tags/') }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -215,6 +253,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false   # job publishes to GHCR (OIDC/GITHUB_TOKEN), never pushes git
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
@@ -261,7 +301,7 @@ jobs:
       # GATE 2 — Trivy image scan (CRITICAL/HIGH blocking)
       # ===============================================================
       - name: Trivy image scan
-        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: web3-sample-app:scan
           scanners: 'vuln,secret,misconfig'
@@ -274,7 +314,7 @@ jobs:
       # GATE 2.5 — container structure test (USER, entrypoint, labels, files)
       # ===============================================================
       - name: Container structure test
-        run: container-structure-test test --image web3-sample-app:scan --config container-structure-test.yaml
+        run: make container-structure-test-only CST_IMAGE=web3-sample-app:scan
 
       # ===============================================================
       # GATE 2.7 — SBOM (SPDX) via Trivy. Generated as a separate artifact +
@@ -282,8 +322,8 @@ jobs:
       # would break the GHCR "OS / Arch" tab. Preserves the manifest UI while
       # still publishing a verifiable SBOM.
       # ===============================================================
-      - name: Generate SBOM (SPDX)
-        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
+      - name: Generate SPDX SBOM
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: web3-sample-app:scan
           scan-type: image
@@ -291,6 +331,11 @@ jobs:
           output: sbom.spdx.json
 
       - name: Upload SBOM
+        # act's local artifact server speaks the v4 protocol; upload-artifact v7
+        # trips it (same reason the build-artifact upload is ACT-gated). The SBOM
+        # is consumed on real GHA only (cosign reads the workspace file directly,
+        # not the artifact), so skipping the upload under act is safe.
+        if: ${{ vars.ACT != 'true' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: sbom-spdx
@@ -330,9 +375,8 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # On non-tag pushes this runs as a validation build (push: false) so
-      # build regressions surface before tag day. Single-arch (linux/amd64);
-      # arm64 dropped to keep CI fast (no QEMU cross-build).
+      # The job only runs on tag pushes, so this always publishes. Single-arch
+      # (linux/amd64); arm64 dropped to keep CI fast (no QEMU cross-build).
       - name: Build and push
         id: push
         uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
@@ -340,7 +384,7 @@ jobs:
           context: .
           file: ./Dockerfile.prod
           platforms: linux/amd64
-          push: ${{ startsWith(github.ref, 'refs/tags/') }}
+          push: true
           provenance: false
           sbom: false
           tags: ${{ steps.meta.outputs.tags }}
@@ -383,11 +427,12 @@ jobs:
           cosign attest --yes --predicate sbom.spdx.json --type spdxjson "${repo}@${DIGEST}"
 
   dast:
-    # Runs in parallel with `docker`. Skipped under act because ZAP's docker-
-    # in-docker bind mount of $GITHUB_WORKSPACE/zap-output doesn't round-trip
-    # through act's host docker daemon. `make ci-run` passes --var ACT=true.
+    # Tag-push only (mirrors `docker`): builds the prod image + runs the OWASP ZAP
+    # baseline at release, not on every commit. Also skipped under act because
+    # ZAP's docker-in-docker bind mount of $GITHUB_WORKSPACE/zap-output doesn't
+    # round-trip through act's host docker daemon. `make ci-run` passes --var ACT=true.
     needs: [changes, build, test]
-    if: ${{ !failure() && !cancelled() && needs.changes.outputs.code == 'true' && vars.ACT != 'true' }}
+    if: ${{ !failure() && !cancelled() && needs.changes.outputs.code == 'true' && vars.ACT != 'true' && startsWith(github.ref, 'refs/tags/') }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -397,7 +442,7 @@ jobs:
           persist-credentials: false
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@ce360397dd3f832beb865e1373c09c0e9f86d70a # v4
+        uses: docker/setup-qemu-action@ce360397dd3f832beb865e1373c09c0e9f86d70a # v4.0.0
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
@@ -464,7 +509,7 @@ jobs:
 
   ci-pass:
     if: always()
-    needs: [changes, static-check, build, test, integration-test, e2e, dast, docker]
+    needs: [changes, mermaid-lint, static-check, build, test, integration-test, e2e, dast, docker]
     timeout-minutes: 2
     runs-on: ubuntu-latest
     steps:
