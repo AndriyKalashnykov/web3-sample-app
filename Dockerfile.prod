@@ -24,7 +24,7 @@ RUN pnpm build && mv dist/config.js dist/config.js.template
 # Dockerfile.prod customManager (datasource=golang-version) in renovate.json.
 # Note: Caddy 2.11.4 already pins go-jose/v3 v3.0.5, so the earlier
 # `--replace` workaround for CVE-2026-34986 is retired.
-FROM caddy:2.11.4-builder-alpine@sha256:0ff10d4b83af453e5526b1c3cd7ae43396832aa8a2a55311d624f6812b33767d AS caddy-builder
+FROM caddy:2.11.4-builder-alpine@sha256:b6a94e74b72261bd536b35acdd22f3577d4e466a9550f2c8d6c8ed6413085d72 AS caddy-builder
 ENV GOTOOLCHAIN=go1.26.4
 RUN xcaddy build v2.11.4 --output /caddy
 
@@ -32,7 +32,7 @@ RUN xcaddy build v2.11.4 --output /caddy
 # caddy:2.11.4-alpine, then add envsubst + strip file caps + create the
 # non-root app user. Keeping the same runtime base preserves the
 # image's working dir (/srv), default CMD, and OCI labels we add below.
-FROM caddy:2.11.4-alpine@sha256:ed26d6d77aaec5366102f2abb4eeba98ebd356159b49c2ed6e20181ecddb27a7 AS server
+FROM caddy:2.11.4-alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648 AS server
 
 # Build-time knobs (non-root identity, listen port, healthcheck host). Override
 # with `--build-arg` per environment; defaults match k8s/cm.yaml + the Caddyfile.
