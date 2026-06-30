@@ -16,7 +16,7 @@ MISE_DATA_DIR  := $(HOME)/.local/share/mise
 export PATH := $(MISE_DATA_DIR)/shims:$(LOCAL_BIN):$(PATH)
 
 # renovate: datasource=docker depName=minlag/mermaid-cli
-MERMAID_CLI_VERSION := 11.15.0
+MERMAID_CLI_VERSION := 11.16.0
 
 # renovate: datasource=docker depName=plantuml/plantuml
 PLANTUML_VERSION := 1.2026.6
