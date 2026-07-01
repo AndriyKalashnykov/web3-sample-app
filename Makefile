@@ -348,6 +348,7 @@ docker-smoke-test: image-build-prod
 
 #dast-scan: @ Run OWASP ZAP baseline against an already-running smoke container on :8080 (CI gate)
 dast-scan: _require-docker
+	@rm -rf zap-output 2>/dev/null || docker run --rm --user 0 -v "$(PWD):/work" -w /work --entrypoint rm ghcr.io/zaproxy/zaproxy:$(ZAP_VERSION) -rf zap-output
 	@mkdir -p zap-output && chmod 777 zap-output
 	@docker run --rm --network host \
 		-v "$(PWD)/zap-output:/zap/wrk:rw" \
