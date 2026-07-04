@@ -31,7 +31,7 @@ pnpm = "11.9.0"
 "aqua:mikefarah/yq" = "4.53.3"
 
 # Tracked: github-tags github.com/aquasecurity/trivy
-"aqua:aquasecurity/trivy" = "0.71.2"
+"aqua:aquasecurity/trivy" = "0.72.0"
 
 # Tracked: github-tags github.com/gitleaks/gitleaks
 "aqua:gitleaks/gitleaks" = "8.30.1"
