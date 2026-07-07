@@ -45,7 +45,7 @@ CLOUD_PROVIDER_KIND_VERSION := v0.11.1
 # `renovate-validate` fetches it on demand via `mise exec`. Self-bump throttled
 # to weekly in renovate.json (matchDepNames:["renovate"]).
 # renovate: datasource=npm depName=renovate
-RENOVATE_VERSION := 43.246.1
+RENOVATE_VERSION := 43.249.0
 
 KIND_CLUSTER_NAME := $(APP_NAME)
 K8S_NAMESPACE     := web3
