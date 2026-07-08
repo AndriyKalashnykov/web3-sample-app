@@ -24,7 +24,7 @@ RUN pnpm build && mv dist/config.js dist/config.js.template
 # Dockerfile.prod customManager (datasource=golang-version) in renovate.json.
 # Note: Caddy 2.11.4 already pins go-jose/v3 v3.0.5, so the earlier
 # `--replace` workaround for CVE-2026-34986 is retired.
-FROM caddy:2.11.4-builder-alpine@sha256:b6a94e74b72261bd536b35acdd22f3577d4e466a9550f2c8d6c8ed6413085d72 AS caddy-builder
+FROM caddy:2.11.4-builder-alpine@sha256:fd207488ae94421fe6a802e34006a50a6409e32fc0f68f5e779f26a45540d6a9 AS caddy-builder
 ENV GOTOOLCHAIN=go1.26.4
 RUN xcaddy build v2.11.4 --output /caddy
 
