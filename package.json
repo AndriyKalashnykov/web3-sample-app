@@ -2,7 +2,7 @@
   "name": "web3-sample-app",
   "version": "v0.0.18",
   "private": true,
-  "packageManager": "pnpm@11.11.0",
+  "packageManager": "pnpm@11.12.0",
   "description": "Web3 frontend with React, Vite, TypeScript and viem 2",
   "license": "MIT",
   "author": "AndriyKalashnykov(AndriyKalashnykov@gmail.com)",
