@@ -46,7 +46,7 @@ importers:
         version: 7.18.1(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       viem:
         specifier: ^2.53.1
-        version: 2.55.1(typescript@7.0.2)
+        version: 2.55.2(typescript@7.0.2)
     devDependencies:
       '@axe-core/playwright':
         specifier: 4.12.1
@@ -1571,8 +1571,8 @@ packages:
     peerDependencies:
       react: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
 
-  viem@2.55.1:
-    resolution: {integrity: sha512-sajvEmONS3dEDFh0jKXGugTU8ImyGoIV3sEHSWNRhgkH484v/+6DjZAplRhcdeqNV/VBxOs/l3raOG4NaXvX9A==}
+  viem@2.55.2:
+    resolution: {integrity: sha512-XlJeyNAZ96dQfOHlxLTK1FKgtWw/TtxENKNMBSBgxqALjiWiBWrFmSSzwwMivryKnBwkbt5E+90jSCLnVEilLA==}
     peerDependencies:
       typescript: '>=5.0.4'
     peerDependenciesMeta:
@@ -2992,7 +2992,7 @@ snapshots:
     dependencies:
       react: 19.2.7
 
-  viem@2.55.1(typescript@7.0.2):
+  viem@2.55.2(typescript@7.0.2):
     dependencies:
       '@noble/curves': 1.9.1
       '@noble/hashes': 1.8.0
