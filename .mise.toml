@@ -11,7 +11,7 @@
 node = "24"
 
 # pnpm package manager (canonical core mise backend).
-pnpm = "11.13.1"
+pnpm = "11.15.0"
 
 # Tracked: github-tags github.com/nektos/act
 "aqua:nektos/act" = "0.2.89"
