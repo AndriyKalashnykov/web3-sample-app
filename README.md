@@ -302,9 +302,10 @@ GitHub Actions runs on every push to `main`, every tag `v*`, every pull request,
 | **test** | after static-check | `make test` (unit + component) |
 | **integration-test** | after static-check | `make integration-test` (real-RPC integration suite) |
 | **build** | after static-check | `make build`; uploads `dist/` artifact |
-| **e2e** | **tag pushes only** (after build + test; skipped under act) | KinD + cloud-provider-kind LoadBalancer + curl assertions + Playwright browser e2e — `make e2e` and `make e2e-browser`. Gated to release tags alongside `security`/`dast`/`docker` so ordinary commits stay cheap. Trade-off: deploy/routing/browser regressions surface at tag time — run both targets locally before cutting a release |
+| **e2e** | **tag pushes only** (after build + test; skipped under act) | KinD + cloud-provider-kind LoadBalancer + curl assertions + Playwright browser e2e — `make e2e` and `make e2e-browser`. Gated to release tags alongside `security`/`dast`/`docker-scan`/`docker-publish` so ordinary commits stay cheap. `docker-publish` **needs** this job, so a red e2e blocks the release. Trade-off: deploy/routing/browser regressions surface at tag time — run both targets locally before cutting a release |
 | **dast** | tag pushes only (after build + test; skipped under act) | OWASP ZAP baseline scan against booted container at release; ZAP image cached |
-| **docker** | tag pushes only (after static-check + build + test) | Builds + Trivy image scan + container-structure-test + SPDX SBOM + smoke test + `linux/amd64` build + push to GHCR + cosign keyless signing + SBOM attestation — all gated to release tags (`v*`). No image is built on ordinary commits |
+| **docker-scan** | tag pushes only (after static-check + **security** + build + test) | Builds the prod image locally and runs the gates: Trivy image scan, container-structure-test, SPDX SBOM, smoke test. **Cannot publish** — no `packages: write`, no `id-token` |
+| **docker-publish** | tag pushes only (after **docker-scan + e2e + dast**) | GHCR login, `linux/amd64` build + push, cosign keyless signing by digest, SBOM attestation. Split from the scan job on 2026-07-29 so a release cannot publish while a runtime gate is red — previously `docker` did not `need` `e2e`/`dast` and published in parallel with them, and a red `ci-pass` cannot unpublish an image, a `:latest` tag or a Rekor signature |
 | **ci-pass** | always (after all above) | Aggregator gate; fails if any upstream job failed or was cancelled |
 
 #### Required Secrets and Variables
