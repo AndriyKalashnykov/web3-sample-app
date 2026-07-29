@@ -408,7 +408,9 @@ ci-run-tag: deps-act
 		--pull=false \
 		--var ACT=true \
 		--artifact-server-port $$PORT \
-		--artifact-server-path $$ARTIFACT_DIR || true
+		--artifact-server-path $$ARTIFACT_DIR; rc=$$?; \
+	rm -rf "$$ARTIFACT_DIR"; \
+	[ $$rc -eq 0 ] || { echo "ci-run-tag: act exited $$rc"; exit $$rc; }
 	@echo "Note: cosign signing will fail under act (no OIDC) — expected."
 
 #ci: @ Run full CI pipeline (install + static-check + test + integration-test + build)
@@ -434,13 +436,16 @@ ci-run: deps-act
 release:
 	@bash -c 'read -p "New tag (current: $(CURRENTTAG)): " newtag && \
 		echo "$$newtag" | grep -qE "^v[0-9]+\.[0-9]+\.[0-9]+$$" || { echo "Error: Tag must match vN.N.N"; exit 1; } && \
-		echo -n "Create and push $$newtag? [y/N] " && read ans && [ "$${ans:-N}" = y ] && \
-		echo $$newtag > ./version.txt && \
-		git add version.txt && \
-		git commit -a -s -m "Cut $$newtag release" && \
+		echo "$$newtag" > ./version.txt && \
+		git add -- version.txt && \
+		echo "--- staged for the release commit (must be version.txt ONLY) ---" && \
+		git diff --cached --stat && \
+		echo -n "Create and push $$newtag? [y/N] " && read ans && \
+		case "$${ans:-N}" in [yY]*) ;; *) echo "aborted"; git restore --staged version.txt; exit 0 ;; esac && \
+		git commit -s -m "Cut $$newtag release" -- version.txt && \
+		git push && \
 		git tag $$newtag && \
 		git push origin $$newtag && \
-		git push && \
 		echo "Done."'
 
 #tag-delete: @ Delete a tag locally and remotely (usage: make tag-delete TAG=v0.0.1)
