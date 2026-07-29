@@ -252,8 +252,15 @@ integration-test: install
 	@pnpm exec vitest run -c vitest.integration.config.ts
 
 #deps-playwright: @ Install Playwright Chromium browser for browser e2e
+# `pnpm exec`, NOT `pnpm dlx`: dlx resolves `playwright` from npm at its LATEST
+# version and downloads THAT version's browser revision, while the tests run under
+# the pinned `@playwright/test` from devDependencies. The moment the two diverge
+# (npm publishes a new Playwright), the runner downloads the wrong revision and
+# every browser test dies in ~1ms with "Executable doesn't exist at
+# .../chromium_headless_shell-<rev>/...". `pnpm exec` runs the project's own
+# pinned Playwright, so the browser revision always matches the test runner.
 deps-playwright: install
-	@pnpm dlx playwright install chromium
+	@pnpm exec playwright install chromium
 
 #e2e: @ Deploy to KinD (LoadBalancer via cloud-provider-kind) and run curl-based e2e suite
 e2e: kind-create kind-deploy
