@@ -24,9 +24,31 @@ RUN pnpm build && mv dist/config.js dist/config.js.template
 # Dockerfile.prod customManager (datasource=golang-version) in renovate.json.
 # Note: Caddy 2.11.4 already pins go-jose/v3 v3.0.5, so the earlier
 # `--replace` workaround for CVE-2026-34986 is retired.
+#
+# The two `--replace` flags below patch transitive CVEs in modules Caddy
+# 2.11.4 declares as INDIRECT deps in its own go.mod, so they cannot be
+# fixed by bumping Caddy (2.11.4 is the latest release as of 2026-07-29):
+#   golang.org/x/text      v0.37.0 -> CVE-2026-56852 (norm.Iter infinite
+#                          loop), fixed in 0.39.0
+#   google.golang.org/grpc v1.81.0 -> GHSA-hrxh-6v49-42gf (xDS RBAC and
+#                          HTTP/2 vulns), fixed in 1.82.1
+# Both stay within their existing major, and both are indirect, so this is
+# a transitive version lift rather than an API change. `xcaddy --replace`
+# is the supported upstream way to apply a transitive CVE fix without
+# waiting on Caddy's release cadence — the same mechanism the retired
+# go-jose workaround used.
+#
+# RETIRE THESE when a Caddy release ships the patched versions itself:
+# check `gh api repos/caddyserver/caddy/contents/go.mod?ref=<tag>`, and if
+# both are already >= the floors above, drop the flags and re-scan.
+# Both versions are Renovate-tracked via Dockerfile.prod customManagers
+# (datasource=go) in renovate.json, so the floors cannot silently rot.
 FROM caddy:2.11.4-builder-alpine@sha256:8e89605351333ad2cc2f3bcc95275a2ccc427f88914050e86a5fde0fd77a63c4 AS caddy-builder
 ENV GOTOOLCHAIN=go1.26.5
-RUN xcaddy build v2.11.4 --output /caddy
+RUN xcaddy build v2.11.4 \
+      --replace golang.org/x/text=golang.org/x/text@v0.40.0 \
+      --replace google.golang.org/grpc=google.golang.org/grpc@v1.82.1 \
+      --output /caddy
 
 # Runtime stage: copy the rebuilt caddy binary over the one shipped in
 # caddy:2.11.4-alpine, then add envsubst + strip file caps + create the
