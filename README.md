@@ -14,7 +14,7 @@ Ships a **four-layer test pyramid** (Vitest unit/component + real-RPC integratio
 | Component | Technology |
 |-----------|------------|
 | Language | TypeScript 6.x (`moduleResolution: "bundler"`) |
-| Framework | React 19, react-router-dom 7 |
+| Framework | React 19, react-router 8 |
 | Build tool | Vite 8 (oxc minifier, Rolldown manual chunks) |
 | UI | MUI v9, Tailwind CSS v4 (`@tailwindcss/postcss`) |
 | State | Redux Toolkit 2 (`createSlice`, typed hooks) |
