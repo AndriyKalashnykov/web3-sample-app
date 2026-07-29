@@ -236,8 +236,9 @@ Run `make help` to see the full list. Grouped by purpose:
 | `make mermaid-lint` | Validate Mermaid blocks via `minlag/mermaid-cli` |
 | `make deps-prune` | Advisory: list unused npm dependencies |
 | `make deps-prune-check` | CI gate: fail if unused dependencies exist |
-| `make static-check` | Composite: check-node-alignment + lint + vulncheck + trivy-fs + trivy-config + secrets + mermaid-lint + deps-prune-check |
-| `make check` | static-check + test + build (full local pipeline) |
+| `make static-check` | Composite (every push): check-node-alignment + lint + secrets + mermaid-lint + diagrams-check + deps-prune-check |
+| `make security-check` | Composite CVE/IaC gate (**tag pushes only** in CI): vulncheck + trivy-fs + trivy-config |
+| `make check` | static-check + security-check + test + build (full local pipeline) |
 
 ### Docker
 
@@ -295,12 +296,13 @@ GitHub Actions runs on every push to `main`, every tag `v*`, every pull request,
 | Job | Triggers | Steps |
 |-----|----------|-------|
 | **changes** | every event | `dorny/paths-filter` detects whether the diff includes code (anything outside docs/images). Doc-only PRs short-circuit downstream jobs while still reporting `ci-pass` (Rulesets-safe) |
-| **static-check** | after changes (code paths only) | `make install` + `make static-check` (check-node-alignment, lint, vulncheck, trivy-fs, trivy-config, secrets, mermaid-lint, deps-prune-check) |
+| **static-check** | after changes (code paths only) | `make install` + `make static-check` (check-node-alignment, lint, secrets, mermaid-lint, diagrams-check, deps-prune-check) |
+| **security** | **tag pushes only** (after changes) | `make security-check` (vulncheck, trivy-fs, trivy-config). Split out of `static-check` because all three read an external advisory feed, so a newly-disclosed CVE reddens them with no repo diff. `docker` depends on it, so a release cannot publish while it is red. Trade-off: CVEs disclosed between releases surface at tag time — run `make security-check` before cutting one |
 | **mermaid-lint** | docs-only changes (off `changes`) | `make mermaid-lint` validates the README/CLAUDE Mermaid blocks. Code changes run mermaid-lint inside `static-check` instead, so this job fires only when a doc-only edit skips `static-check` |
 | **test** | after static-check | `make test` (unit + component) |
 | **integration-test** | after static-check | `make integration-test` (real-RPC integration suite) |
 | **build** | after static-check | `make build`; uploads `dist/` artifact |
-| **e2e** | after build + test (skipped under act) | KinD + cloud-provider-kind LoadBalancer + curl assertions + Playwright browser e2e — `make e2e` and `make e2e-browser` |
+| **e2e** | **tag pushes only** (after build + test; skipped under act) | KinD + cloud-provider-kind LoadBalancer + curl assertions + Playwright browser e2e — `make e2e` and `make e2e-browser`. Gated to release tags alongside `security`/`dast`/`docker` so ordinary commits stay cheap. Trade-off: deploy/routing/browser regressions surface at tag time — run both targets locally before cutting a release |
 | **dast** | tag pushes only (after build + test; skipped under act) | OWASP ZAP baseline scan against booted container at release; ZAP image cached |
 | **docker** | tag pushes only (after static-check + build + test) | Builds + Trivy image scan + container-structure-test + SPDX SBOM + smoke test + `linux/amd64` build + push to GHCR + cosign keyless signing + SBOM attestation — all gated to release tags (`v*`). No image is built on ordinary commits |
 | **ci-pass** | always (after all above) | Aggregator gate; fails if any upstream job failed or was cancelled |
