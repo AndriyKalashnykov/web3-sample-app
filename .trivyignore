@@ -1,15 +1,24 @@
 # Trivy ignore list — entries here are tracked in CLAUDE.md "Upgrade Backlog".
 # Remove an entry once the corresponding backlog item ships.
 
-# Base-image (caddy:2.11.4-alpine → alpine 3.23) OS-package CVEs whose fixes are
-# NOT yet in the alpine 3.23 repo — `apk update && apk upgrade --simulate` finds
-# no newer package as of 2026-06-22, so the Dockerfile's `apk --no-cache upgrade`
-# cannot patch them yet. They affect the caddy 2.11.3 base too (pre-existing,
-# not introduced by the 2.11.4 bump). Reachability is nil: caddy is a static Go
-# binary that dynamically links NONE of these libs (verified via `ldd`), so the
-# served workload never exercises openssl/libxml2/libexpat code paths. The
-# `apk --no-cache upgrade` step pulls the fixes automatically once alpine 3.23
-# ships them; the `exp:` dates auto-expire these waivers to force re-evaluation.
-CVE-2026-45447 exp:2026-07-22
-CVE-2026-45186 exp:2026-07-22
-CVE-2026-6732 exp:2026-07-22
+# (Currently empty — no active waivers.)
+#
+# 2026-07-29: the three alpine OS-package waivers that lived here (CVE-2026-45447
+# openssl, CVE-2026-45186 libexpat, CVE-2026-6732 libxml2) expired on 2026-07-22
+# and were REMOVED as dead rather than re-dated. Measured on 2026-07-29 with the
+# waivers explicitly disabled (`trivy image --ignorefile /dev/null`):
+#   * caddy:2.11.4-alpine now resolves to alpine 3.23.5 with libcrypto3/libssl3
+#     3.5.7-r0, and `apk upgrade --simulate` offers nothing newer for them —
+#     i.e. openssl is already patched upstream, not merely unfixed.
+#   * libexpat and libxml2 are NOT INSTALLED in this image at all.
+#   * All three CVE IDs return ZERO hits against both the base image and the
+#     built prod image.
+# The five alpine CVEs the base image DOES still carry (c-ares CVE-2026-33630,
+# curl/libcurl CVE-2026-5773 + CVE-2026-6276) are all fixed-in-repo and are
+# cleared by Dockerfile.prod's `apk --no-cache upgrade` — the built image scans
+# 0 on the alpine layer, so they need no waiver either.
+#
+# House style for any future entry: state (a) why it is unpatchable upstream,
+# (b) the reachability analysis, (c) the auto-remediation path, and (d) an
+# `exp:` date so the waiver expires and forces re-evaluation. Track each one in
+# the CLAUDE.md "Upgrade Backlog".

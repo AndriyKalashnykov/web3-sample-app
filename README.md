@@ -14,7 +14,7 @@ Ships a **four-layer test pyramid** (Vitest unit/component + real-RPC integratio
 | Component | Technology |
 |-----------|------------|
 | Language | TypeScript 6.x (`moduleResolution: "bundler"`) |
-| Framework | React 19, react-router-dom 7 |
+| Framework | React 19, react-router 8 |
 | Build tool | Vite 8 (oxc minifier, Rolldown manual chunks) |
 | UI | MUI v9, Tailwind CSS v4 (`@tailwindcss/postcss`) |
 | State | Redux Toolkit 2 (`createSlice`, typed hooks) |
@@ -146,7 +146,7 @@ make image-build         # dev image (Node alpine + pnpm dev server)
 make image-build-prod    # production image (Caddy 2 on 8080)
 ```
 
-The production Dockerfile is three-stage: `node:24.17.0-alpine` builder → `caddy:2.11.4-builder-alpine` (runs `xcaddy build v2.11.4` with `GOTOOLCHAIN=go1.26.4` to rebuild Caddy's stdlib past the Go MIME-header DoS CVE-2026-42504 — the vanilla `caddy:2.11.4-alpine` binary ships Go 1.26.3 and is still flagged by Trivy; Caddy 2.11.4 already pins go-jose v3.0.5 so the earlier `--replace` workaround is retired) → `caddy:2.11.4-alpine` runtime, with the rebuilt binary copied over the bundled one. Both Dockerfiles use `pnpm install --frozen-lockfile`, pin base images by SHA256 digest, and copy lockfiles before source for layer caching. The final image runs as non-root (UID 1000); the build adds `gettext` (for `envsubst`) and strips `cap_net_bind_service` from `/usr/bin/caddy` so the binary execs cleanly under `securityContext.capabilities.drop:[ALL]` in K8s.
+The production Dockerfile is three-stage: `node:24.17.0-alpine` builder → `caddy:2.11.4-builder-alpine` (runs `xcaddy build v2.11.4` with `GOTOOLCHAIN=go1.26.5` to rebuild Caddy's stdlib past three Go CVEs — CVE-2026-42504 (MIME DoS) and CVE-2026-27145 (crypto/x509 DoS), both fixed in 1.26.4, plus CVE-2026-39822 (`os.Root` symlink traversal), which needs 1.26.5 — the vanilla `caddy:2.11.4-alpine` binary ships Go 1.26.3 and is still flagged by Trivy; Caddy 2.11.4 already pins go-jose v3.0.5 so the earlier `--replace` workaround is retired) → `caddy:2.11.4-alpine` runtime, with the rebuilt binary copied over the bundled one. Both Dockerfiles use `pnpm install --frozen-lockfile`, pin base images by SHA256 digest, and copy lockfiles before source for layer caching. The final image runs as non-root (UID 1000); the build adds `gettext` (for `envsubst`) and strips `cap_net_bind_service` from `/usr/bin/caddy` so the binary execs cleanly under `securityContext.capabilities.drop:[ALL]` in K8s.
 
 ## Deployment
 

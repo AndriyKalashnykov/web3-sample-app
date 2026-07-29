@@ -1,7 +1,7 @@
 import { render, RenderOptions } from '@testing-library/react'
 import { Provider } from 'react-redux'
 import { ThemeProvider } from '@mui/material/styles'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter } from 'react-router'
 import { configureStore } from '@reduxjs/toolkit'
 import counterReducer from '@/store/counterSlice'
 import commonReducer from '@/store/commonSlice'
