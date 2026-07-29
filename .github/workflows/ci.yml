@@ -100,6 +100,38 @@ jobs:
       - name: Static check
         run: make static-check
 
+  # CVE / vulnerability gates, deliberately TAG-PUSH ONLY (same gating as docker
+  # and dast). vulncheck (pnpm audit), trivy-fs and trivy-config all depend on an
+  # EXTERNAL, drifting advisory feed, so a freshly-disclosed CVE reddens them with
+  # no diff in the repo. On 2026-07-24 exactly that blocked `main` AND all 8 open
+  # PRs for five days over a single react-router advisory. Concentrating them at
+  # the release keeps routine dependency bumps cheap.
+  #
+  # TRADE-OFF: a CVE disclosed between releases is invisible until a tag is cut,
+  # and the tag is what goes red. `make security-check` runs it on demand.
+  security:
+    needs: [changes]
+    if: ${{ !failure() && !cancelled() && needs.changes.outputs.code == 'true' && startsWith(github.ref, 'refs/tags/') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Set up mise
+        uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
+        with:
+          install: true
+          cache: true
+
+      - name: Install dependencies
+        run: make install
+
+      - name: Security check (CVE + IaC scans)
+        run: make security-check
+
   test:
     needs: [changes, static-check]
     if: ${{ !failure() && !cancelled() && needs.changes.outputs.code == 'true' }}
@@ -147,8 +179,12 @@ jobs:
   e2e:
     # KinD-in-Docker inside act doesn't behave reliably; the `make ci-run` target
     # passes `--var ACT=true` to act so this guard skips the job locally.
+    #
+    # TAG-PUSH ONLY, matching docker + dast. Deploy/routing/browser regressions are
+    # therefore NOT caught between releases — the tag is what goes red. Run
+    # `make e2e` and `make e2e-browser` locally before cutting one.
     needs: [changes, build, test]
-    if: ${{ !failure() && !cancelled() && needs.changes.outputs.code == 'true' && vars.ACT != 'true' }}
+    if: ${{ !failure() && !cancelled() && needs.changes.outputs.code == 'true' && vars.ACT != 'true' && startsWith(github.ref, 'refs/tags/') }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     # Reuse cached prod-image layers across runs (and across make e2e +
@@ -244,7 +280,10 @@ jobs:
     # NOTE: the Dockerfile is still exercised on every push by the `e2e` job
     # (KinD deploy builds the prod image), so a broken Dockerfile is still caught
     # pre-tag there — but the image SCAN / structure-test / SBOM only run on tags.
-    needs: [changes, static-check, build, test]
+    # `security` is a prerequisite so a release can never PUBLISH an image while the
+    # repo's CVE gate is red — the scans moved to tag time, so this is the run that
+    # has to honour them.
+    needs: [changes, static-check, security, build, test]
     if: ${{ !failure() && !cancelled() && needs.changes.outputs.code == 'true' && startsWith(github.ref, 'refs/tags/') }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -512,7 +551,7 @@ jobs:
 
   ci-pass:
     if: always()
-    needs: [changes, mermaid-lint, static-check, build, test, integration-test, e2e, dast, docker]
+    needs: [changes, mermaid-lint, static-check, security, build, test, integration-test, e2e, dast, docker]
     timeout-minutes: 2
     runs-on: ubuntu-latest
     steps:

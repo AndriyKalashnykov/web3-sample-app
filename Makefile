@@ -221,15 +221,33 @@ check-node-alignment:
 	fi; \
 	echo "Node major aligned across all pins ($$mise_major)."
 
-#static-check: @ Composite quality gate: node-alignment + lint + vulncheck + trivy-fs + trivy-config + secrets + mermaid-lint + diagrams-check + deps-prune-check
-static-check: check-node-alignment lint vulncheck trivy-fs trivy-config secrets mermaid-lint diagrams-check deps-prune-check
+#static-check: @ Composite quality gate (every push): node-alignment + lint + secrets + mermaid-lint + diagrams-check + deps-prune-check
+# Deterministic, offline-ish gates only — these run on every code push in CI.
+static-check: check-node-alignment lint secrets mermaid-lint diagrams-check deps-prune-check
+
+#security-check: @ Composite CVE/vuln gate (TAG PUSHES ONLY in CI): vulncheck + trivy-fs + trivy-config
+# Split out of static-check deliberately. All three depend on an EXTERNAL, drifting
+# advisory feed (npm's audit endpoint, Trivy's vuln DB, Trivy's checks bundle), so a
+# freshly-disclosed CVE reddens them with no diff in the repo — which is how a single
+# react-router advisory blocked `main` plus all 8 open PRs for five days on 2026-07-24.
+# Running them at tag time concentrates that cost at the release, where a real
+# decision gets made, instead of taxing every routine dependency bump.
+#
+# TRADE-OFF, stated so nobody rediscovers it the hard way: a CVE disclosed between
+# releases is now invisible until you cut a tag, and the tag is what goes red. Run
+# `make security-check` by hand (or `make check`, which still includes it) before a
+# release you care about. See also the `security` job in .github/workflows/ci.yml.
+security-check: vulncheck trivy-fs trivy-config
 
 #format: @ Run prettier format
 format: install
 	@pnpm prettier
 
-#check: @ Run static-check + test + build (full local pipeline)
-check: static-check test build
+#check: @ Run static-check + security-check + test + build (full local pipeline)
+# Deliberately KEEPS security-check, so `make check` still means what it always did
+# locally. Only CI's ordinary-push path drops the CVE gates; `make ci` mirrors that
+# path exactly, so the two are not in conflict.
+check: static-check security-check test build
 
 #upgrade: @ Upgrade pnpm dependencies
 upgrade: install
@@ -570,7 +588,7 @@ cleanup-images:
 	done
 
 .PHONY: help deps deps-act deps-hadolint deps-k8s deps-trivy deps-secrets deps-playwright clean install build lint vulncheck \
-	trivy-fs trivy-config secrets mermaid-lint diagrams diagrams-check diagrams-clean check-node-alignment static-check format check upgrade \
+	trivy-fs trivy-config secrets mermaid-lint diagrams diagrams-check diagrams-clean check-node-alignment static-check security-check format check upgrade \
 	test test-watch test-coverage integration-test e2e e2e-browser run \
 	image-build image-build-prod image-run image-stop docker-smoke-test container-structure-test container-structure-test-only dast dast-scan _require-docker \
 	ci ci-run ci-run-tag release tag-delete \

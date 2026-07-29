@@ -27,8 +27,9 @@ make secrets        # gitleaks over git history
 make mermaid-lint   # validate ```mermaid blocks via minlag/mermaid-cli
 make diagrams       # render docs/diagrams/*.puml C4 sources to PNG via pinned plantuml/plantuml
 make diagrams-check # drift gate: re-render + git diff (fails if committed PNGs are stale vs .puml)
-make static-check   # composite gate: check-node-alignment + lint + vulncheck + trivy-fs + trivy-config + secrets + mermaid-lint + diagrams-check + deps-prune-check
-make check          # static-check + test + build (full local pipeline)
+make static-check   # every-push gate: check-node-alignment + lint + secrets + mermaid-lint + diagrams-check + deps-prune-check
+make security-check # TAG-ONLY in CI: vulncheck + trivy-fs + trivy-config (external advisory feeds)
+make check          # static-check + security-check + test + build (full local pipeline)
 make ci             # CI pipeline: install + static-check + test + integration-test + build
 make ci-run         # run the GitHub Actions workflow locally via act
 make upgrade        # pnpm upgrade
@@ -62,6 +63,7 @@ Four-layer test pyramid. Each layer has its own Makefile target, vitest/Playwrig
 Notes:
 - `make test` and `make integration-test` are independent — the `test` job runs unit + component (no network), `integration-test` job runs the real-RPC suite (needs outbound HTTPS).
 - `e2e` and `dast` are gated `if: vars.ACT != 'true'` in CI because KinD-in-Docker inside act isn't reliable. Run them locally.
+- Since 2026-07-29 `e2e` is additionally **tag-push only**, matching `security`/`dast`/`docker`. Ordinary commits and PRs run only `changes` → `static-check` → (`test`, `integration-test`, `build`) → `ci-pass`. **Deploy, routing, Caddy and browser regressions are therefore NOT caught between releases** — run `make e2e` + `make e2e-browser` locally before cutting a tag. (This is the class that bit on 2026-07-29: a Playwright version-drift bug sat unnoticed for days precisely because `e2e` was not running.)
 - The CI `e2e` job runs both `make e2e` (curl) AND `make e2e-browser` (Playwright Chromium against the deployed SPA) — Playwright is the only layer that catches CSP violations and runtime SPA bugs.
 - The ether unit tests mock viem's `createPublicClient`; component tests mock the `@/service/ether` module entirely.
 
@@ -102,9 +104,10 @@ Vite (oxc minifier, not terser). Console and debugger statements are stripped in
 
 ## CI/CD
 
-- **ci.yml** job DAG: `changes` → `static-check` → (`test`, `integration-test`, `build` parallel) → (`e2e`, `dast`, `docker` parallel) → `ci-pass` (aggregator). A lightweight `mermaid-lint` job also runs off `changes` for **docs-only** changes — README mermaid blocks are docs-excluded from `code`, so `static-check`'s mermaid-lint never sees them; on code changes `static-check` covers mermaid instead, so the job is gated `docs == 'true' && code != 'true'`.
+- **ci.yml** job DAG — **ordinary push/PR:** `changes` → `static-check` → (`test`, `integration-test`, `build` parallel) → `ci-pass` (aggregator). **Tag push additionally:** `security` (off `changes`) plus `e2e`, `dast`, `docker` — the four release-only jobs; `docker` `needs:` `security` so a red CVE gate blocks the publish. A lightweight `mermaid-lint` job also runs off `changes` for **docs-only** changes — README mermaid blocks are docs-excluded from `code`, so `static-check`'s mermaid-lint never sees them; on code changes `static-check` covers mermaid instead, so the job is gated `docs == 'true' && code != 'true'`.
   - `changes`: job-level path filter via `dorny/paths-filter`. Doc-only diffs (`**.md` outside `CLAUDE.md`, `docs/**`, `specs/**`, `benchmarks/**`, `LICENSE`, `**.png`, etc.) set `outputs.code = false` → every heavy job short-circuits via `if: needs.changes.outputs.code == 'true'`. `docs/diagrams/**/*.puml` is re-included as `code` so a diagram-source edit runs `static-check`→`diagrams-check` (else a stale-PNG commit could merge under the docs gate). A second `outputs.docs` (any `**.md`) gates the `mermaid-lint` job. Tag pushes force `code = true` to avoid the empty-diff escape hatch. The workflow itself always runs so `ci-pass` always reports a status — Repository-Rulesets-safe.
-  - `static-check`: composite of check-node-alignment + lint + vulncheck + trivy-fs + trivy-config + secrets + mermaid-lint + diagrams-check + deps-prune-check via `make static-check`.
+  - `static-check`: composite of check-node-alignment + lint + secrets + mermaid-lint + diagrams-check + deps-prune-check via `make static-check`. Deterministic gates only — runs on **every** code push.
+  - `security`: **tag-push only.** `make security-check` = vulncheck (pnpm audit) + trivy-fs + trivy-config. Split out of `static-check` on 2026-07-29 because all three depend on an **external, drifting advisory feed**, so a freshly-disclosed CVE reddens them with no diff in the repo — which is exactly how one react-router advisory blocked `main` **and all 8 open PRs** for five days. `docker` `needs:` it, so a release can never publish an image while the CVE gate is red. **Trade-off:** a CVE disclosed between releases is invisible until a tag is cut, and the tag is what goes red — run `make security-check` (or `make check`) by hand before a release you care about.
   - `integration-test`: real-RPC vitest suite (`make integration-test`).
   - `e2e`: KinD + `cloud-provider-kind` (real LoadBalancer Service IPs on the kind Docker network) + `make e2e` (curl) + `make e2e-browser` (Playwright Chromium). Gated `if: vars.ACT != 'true'`.
   - `dast`: **tag-push only** (mirrors `docker` — `startsWith(github.ref, 'refs/tags/')`). Builds `:scan` image via shared cache, boots it, runs OWASP ZAP baseline (`-I`, FAIL-only blocking) at release. Cached ZAP image (~3.4GB). Also gated `if: vars.ACT != 'true'`. Uploads HTML/JSON/MD report. (Moved off every-push to keep ordinary commits cheap; the image is scanned for CVEs by `docker`'s Trivy gate at the same release.)
@@ -148,7 +151,7 @@ The `docker` job in `ci.yml` builds, scans, and ships images **on tag pushes onl
 - TypeScript: **6.x** with `moduleResolution: "bundler"` (no `baseUrl`, no `esModuleInterop`).
 - Formatting: **prettier** only (no eslint).
 - Parameter externalization: operator-tunable host/port/timeout values live in `.env.example` (committed source of truth; copy to gitignored `.env` to override). Shell scripts source `.env.example` then `.env`; the Makefile mirrors them as `?=` defaults; the SPA reads `VITE_*` at runtime via `/config.js` (Pattern C).
-- Static analysis: **check-node-alignment + prettier + hadolint + Trivy fs + Trivy config + gitleaks + mermaid-lint + diagrams-check**, composed in `make static-check`.
+- Static analysis: **check-node-alignment + prettier + hadolint + gitleaks + mermaid-lint + diagrams-check**, composed in `make static-check` (every push). The CVE/IaC scans — **pnpm audit + Trivy fs + Trivy config** — live in `make security-check`, which CI runs on **tag pushes only**.
 - Commit messages: conventional commits (`feat:`, `fix:`, `chore:`, `ci:`, `refactor:`, `docs:`, `perf:`).
 - Release: `make release` validates semver format (`vN.N.N`), writes `version.txt`, commits and pushes the tag.
 - State management: **Redux Toolkit** with `createSlice` pattern (migrated from Rematch).
