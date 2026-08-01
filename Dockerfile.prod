@@ -47,7 +47,7 @@ FROM caddy:2.11.4-builder-alpine@sha256:8e89605351333ad2cc2f3bcc95275a2ccc427f88
 ENV GOTOOLCHAIN=go1.26.5
 RUN xcaddy build v2.11.4 \
       --replace golang.org/x/text=golang.org/x/text@v0.40.0 \
-      --replace google.golang.org/grpc=google.golang.org/grpc@v1.82.1 \
+      --replace google.golang.org/grpc=google.golang.org/grpc@v1.83.0 \
       --output /caddy
 
 # Runtime stage: copy the rebuilt caddy binary over the one shipped in
