@@ -17,7 +17,7 @@ pnpm = "11.19.0"
 "aqua:nektos/act" = "0.2.89"
 
 # Tracked: github-tags github.com/hadolint/hadolint
-"aqua:hadolint/hadolint" = "2.14.0"
+"aqua:hadolint/hadolint" = "2.15.1"
 
 # Tracked: github-tags github.com/kubernetes/kubectl
 "aqua:kubernetes/kubectl" = "1.36.2"
@@ -31,7 +31,7 @@ pnpm = "11.19.0"
 "aqua:mikefarah/yq" = "4.53.3"
 
 # Tracked: github-tags github.com/aquasecurity/trivy
-"aqua:aquasecurity/trivy" = "0.72.0"
+"aqua:aquasecurity/trivy" = "0.73.0"
 
 # Tracked: github-tags github.com/gitleaks/gitleaks
 "aqua:gitleaks/gitleaks" = "8.30.1"
