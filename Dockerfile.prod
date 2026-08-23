@@ -44,7 +44,7 @@ RUN pnpm build && mv dist/config.js dist/config.js.template
 # Both versions are Renovate-tracked via Dockerfile.prod customManagers
 # (datasource=go) in renovate.json, so the floors cannot silently rot.
 FROM caddy:2.11.4-builder-alpine@sha256:7bac9be4072f7c4db2ccc7350750e0705004bf02da2ac7d96b1469ca4f28bb7c AS caddy-builder
-ENV GOTOOLCHAIN=go1.26.6
+ENV GOTOOLCHAIN=go1.27.0
 RUN xcaddy build v2.11.4 \
       --replace golang.org/x/text=golang.org/x/text@v0.40.0 \
       --replace google.golang.org/grpc=google.golang.org/grpc@v1.83.0 \
