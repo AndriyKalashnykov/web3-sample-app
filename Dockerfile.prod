@@ -43,7 +43,7 @@ RUN pnpm build && mv dist/config.js dist/config.js.template
 # both are already >= the floors above, drop the flags and re-scan.
 # Both versions are Renovate-tracked via Dockerfile.prod customManagers
 # (datasource=go) in renovate.json, so the floors cannot silently rot.
-FROM caddy:2.11.4-builder-alpine@sha256:fc72c8a37cb774f155094d7f08e48b67876477e0d11ca96f58d9cf5b0cff42c8 AS caddy-builder
+FROM caddy:2.11.4-builder-alpine@sha256:1a1689db91cfb390b2d856a1b3774e796852822cd723fa54c475b272f82bb4b7 AS caddy-builder
 ENV GOTOOLCHAIN=go1.27.1
 RUN xcaddy build v2.11.4 \
       --replace golang.org/x/text=golang.org/x/text@v0.40.0 \
