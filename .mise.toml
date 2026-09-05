@@ -17,7 +17,7 @@ pnpm = "12.3.0"
 "aqua:nektos/act" = "0.2.89"
 
 # Tracked: github-tags github.com/hadolint/hadolint
-"aqua:hadolint/hadolint" = "2.14.0"
+"aqua:hadolint/hadolint" = "2.15.1"
 
 # Tracked: github-tags github.com/kubernetes/kubectl
 "aqua:kubernetes/kubectl" = "1.36.2"
@@ -25,13 +25,13 @@ pnpm = "12.3.0"
 # Tracked: github-tags github.com/kubernetes-sigs/kind
 # KIND_NODE_IMAGE in Makefile is bumped together with this — see KinD
 # release notes for the matching node image (not independently trackable).
-"aqua:kubernetes-sigs/kind" = "0.32.0"
+"aqua:kubernetes-sigs/kind" = "0.33.0"
 
 # Tracked: github-tags github.com/mikefarah/yq
-"aqua:mikefarah/yq" = "4.53.3"
+"aqua:mikefarah/yq" = "4.53.6"
 
 # Tracked: github-tags github.com/aquasecurity/trivy
-"aqua:aquasecurity/trivy" = "0.72.0"
+"aqua:aquasecurity/trivy" = "0.74.0"
 
 # Tracked: github-tags github.com/gitleaks/gitleaks
 "aqua:gitleaks/gitleaks" = "8.30.1"
