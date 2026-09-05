@@ -16,10 +16,10 @@ MISE_DATA_DIR  := $(HOME)/.local/share/mise
 export PATH := $(MISE_DATA_DIR)/shims:$(LOCAL_BIN):$(PATH)
 
 # renovate: datasource=docker depName=minlag/mermaid-cli
-MERMAID_CLI_VERSION := 11.16.1
+MERMAID_CLI_VERSION := 11.17.0
 
 # renovate: datasource=docker depName=plantuml/plantuml
-PLANTUML_VERSION := 1.2026.6
+PLANTUML_VERSION := 1.2026.8
 
 # PlantUML C4 diagram sources + rendered PNGs (committed). A PLANTUML_VERSION
 # bump changes the stamp's NAME, so the stale stamp no longer satisfies the
