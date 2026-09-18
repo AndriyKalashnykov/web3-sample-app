@@ -43,7 +43,7 @@ RUN pnpm build && mv dist/config.js dist/config.js.template
 # both are already >= the floors above, drop the flags and re-scan.
 # Both versions are Renovate-tracked via Dockerfile.prod customManagers
 # (datasource=go) in renovate.json, so the floors cannot silently rot.
-FROM caddy:2.11.4-builder-alpine@sha256:1a1689db91cfb390b2d856a1b3774e796852822cd723fa54c475b272f82bb4b7 AS caddy-builder
+FROM caddy:2.11.4-builder-alpine@sha256:2b9f32cbba6045e79212bb253f595588d20be8f7d1edf61582c519e124e0d2d8 AS caddy-builder
 ENV GOTOOLCHAIN=go1.27.1
 RUN xcaddy build v2.11.4 \
       --replace golang.org/x/text=golang.org/x/text@v0.40.0 \
@@ -54,7 +54,7 @@ RUN xcaddy build v2.11.4 \
 # caddy:2.11.4-alpine, then add envsubst + strip file caps + create the
 # non-root app user. Keeping the same runtime base preserves the
 # image's working dir (/srv), default CMD, and OCI labels we add below.
-FROM caddy:2.11.4-alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648 AS server
+FROM caddy:2.11.4-alpine@sha256:de23def33b17fb5d1290b0f6c2add1d70780e52341896c00a4c8a2a2fe9d355e AS server
 
 # Build-time knobs (non-root identity, listen port, healthcheck host). Override
 # with `--build-arg` per environment; defaults match k8s/cm.yaml + the Caddyfile.
