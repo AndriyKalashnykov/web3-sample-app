@@ -63,7 +63,9 @@ ARG APP_GID=1000
 ARG APP_INTERNAL_PORT=8080
 ARG HEALTHCHECK_HOST=localhost
 
-USER root
+# root, numerically (hadolint DL3066) — only for the build steps below; the
+# runtime user is dropped to ${APP_UID}:${APP_GID} further down.
+USER 0:0
 # - Replace the bundled /usr/bin/caddy with the rebuilt one (Go-stdlib CVE-2026-42504).
 # - `gettext` provides `envsubst` for Pattern C config injection.
 # - `libcap` provides `setcap`, used to strip the `cap_net_bind_service=ep`
@@ -118,10 +120,12 @@ ENV PORT=${APP_INTERNAL_PORT} \
 EXPOSE ${APP_INTERNAL_PORT}
 
 # In-image liveness: probe Caddy's /internal/isalive route. Flag timings MUST
-# be literal (Docker does not variable-expand them); the CMD body runs under
-# /bin/sh and DOES honor ${HEALTHCHECK_HOST}/${PORT}. wget ships with the
+# be literal (Docker does not variable-expand them). The CMD is exec/JSON form
+# (hadolint DL3025) with an explicit `sh -c`, so the body still runs under
+# /bin/sh at probe time and DOES honor ${HEALTHCHECK_HOST}/${PORT} — Docker
+# does not expand variables in HEALTHCHECK at build time. wget ships with the
 # alpine base (busybox).
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
-    CMD wget -qO- "http://${HEALTHCHECK_HOST}:${PORT}/internal/isalive" >/dev/null 2>&1 || exit 1
+    CMD ["sh", "-c", "wget -qO- \"http://${HEALTHCHECK_HOST}:${PORT}/internal/isalive\" >/dev/null 2>&1 || exit 1"]
 
 ENTRYPOINT ["sh","/usr/local/bin/start-caddy.sh"]

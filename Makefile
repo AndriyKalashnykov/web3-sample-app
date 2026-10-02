@@ -32,7 +32,7 @@ DIAGRAM_STAMP := $(DIAGRAM_DIR)/out/.plantuml-$(PLANTUML_VERSION).stamp
 
 # Bumped together with aqua:kubernetes-sigs/kind in .mise.toml — see KinD
 # release notes for the matching node image. Not independently trackable.
-KIND_NODE_IMAGE := v1.36.1
+KIND_NODE_IMAGE := v1.37.0
 
 # renovate: datasource=github-releases depName=zaproxy/zaproxy extractVersion=^v(?<version>.*)$
 ZAP_VERSION := 2.17.0
