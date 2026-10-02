@@ -38,7 +38,7 @@ KIND_NODE_IMAGE := v1.37.0
 ZAP_VERSION := 2.17.0
 
 # renovate: datasource=docker depName=registry.k8s.io/cloud-provider-kind/cloud-controller-manager
-CLOUD_PROVIDER_KIND_VERSION := v0.11.1
+CLOUD_PROVIDER_KIND_VERSION := v0.12.0
 
 # Renovate CLI version — pinned HERE (not in .mise.toml) so `mise install` does
 # not eagerly reinstall renovate's ~600-package npm tree on every `make deps`.
