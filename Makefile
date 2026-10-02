@@ -32,7 +32,7 @@ DIAGRAM_STAMP := $(DIAGRAM_DIR)/out/.plantuml-$(PLANTUML_VERSION).stamp
 
 # Bumped together with aqua:kubernetes-sigs/kind in .mise.toml — see KinD
 # release notes for the matching node image. Not independently trackable.
-KIND_NODE_IMAGE := v1.36.1
+KIND_NODE_IMAGE := v1.37.0
 
 # renovate: datasource=github-releases depName=zaproxy/zaproxy extractVersion=^v(?<version>.*)$
 ZAP_VERSION := 2.17.0
@@ -45,7 +45,7 @@ CLOUD_PROVIDER_KIND_VERSION := v0.11.1
 # `renovate-validate` fetches it on demand via `mise exec`. Self-bump throttled
 # to weekly in renovate.json (matchDepNames:["renovate"]).
 # renovate: datasource=npm depName=renovate
-RENOVATE_VERSION := 44.0.0
+RENOVATE_VERSION := 44.115.7
 
 KIND_CLUSTER_NAME := $(APP_NAME)
 K8S_NAMESPACE     := web3

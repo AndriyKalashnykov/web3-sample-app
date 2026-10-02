@@ -14,5 +14,7 @@ ARG APP_INTERNAL_PORT=8080
 ENV PORT=${APP_INTERNAL_PORT}
 EXPOSE ${APP_INTERNAL_PORT}
 
-USER node
+# Numeric form of the base image's `node` user (uid=1000 gid=1000) — hadolint
+# DL3066: a name is only resolvable inside the image, a numeric id is not.
+USER 1000:1000
 CMD ["pnpm", "run", "dev"]
