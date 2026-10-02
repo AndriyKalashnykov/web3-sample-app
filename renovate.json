@@ -72,9 +72,12 @@
     },
     {
       "customType": "regex",
-      "description": "Track the caddy version in the `xcaddy build vX.Y.Z` rebuild line of Dockerfile.prod so it bumps together with the caddy FROM digests (dockerfile manager) — otherwise Renovate bumps the FROM base while the rebuilt-binary version silently drifts. Uses github-releases (NOT docker datasource) to avoid config:best-practices' docker:pinDigests trying to digest-pin a bare version literal; the `caddy` group rule below joins it with the FROM lines into one PR.",
-      "managerFilePatterns": ["/^Dockerfile\\.prod$/"],
-      "matchStrings": ["xcaddy build v(?<currentValue>[0-9]+\\.[0-9]+\\.[0-9]+)"],
+      "description": "Track the caddy version in the `xcaddy build vX.Y.Z` rebuild line of Dockerfile.prod so it bumps together with the caddy FROM digests (dockerfile manager) — otherwise Renovate bumps the FROM base while the rebuilt-binary version silently drifts. Uses github-releases (NOT docker datasource) to avoid config:best-practices' docker:pinDigests trying to digest-pin a bare version literal; the `caddy` group rule below joins it with the FROM lines into one PR. The SAME manager also tracks the `caddy version` expectation in container-structure-test.yaml: that assertion must equal the xcaddy literal (the rebuilt binary, not the FROM tag, decides what `caddy version` prints), and the test runs on release tags only — so an untracked copy goes stale silently and fails the next release (it did: xcaddy moved to v2.11.6 while the test still expected v2.11.4).",
+      "managerFilePatterns": ["/^Dockerfile\\.prod$/", "/^container-structure-test\\.yaml$/"],
+      "matchStrings": [
+        "xcaddy build v(?<currentValue>[0-9]+\\.[0-9]+\\.[0-9]+)",
+        "expectedOutput: \\[\"v(?<currentValue>[0-9]+\\.[0-9]+\\.[0-9]+)"
+      ],
       "datasourceTemplate": "github-releases",
       "depNameTemplate": "caddyserver/caddy",
       "extractVersionTemplate": "^v(?<version>.*)$"

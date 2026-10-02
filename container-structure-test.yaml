@@ -32,7 +32,11 @@ fileExistenceTests:
     shouldExist: true
 
 commandTests:
-  - name: "caddy is the Go-stdlib-CVE-patched 2.11.4 rebuild"
+  # The expected version MUST equal the `xcaddy build vX.Y.Z` literal in
+  # Dockerfile.prod — that line, not the FROM tag, decides what `caddy version`
+  # prints. Renovate bumps both in one PR (same custom.regex manager, depName
+  # caddyserver/caddy); a hand-edit of one without the other fails this test.
+  - name: "caddy is the xcaddy rebuild pinned in Dockerfile.prod"
     command: "caddy"
     args: ["version"]
-    expectedOutput: ["v2.11.4.*"]
+    expectedOutput: ["v2.11.6.*"]
