@@ -15,34 +15,31 @@ COPY . .
 RUN pnpm build && mv dist/config.js dist/config.js.template
 
 # https://hub.docker.com/_/caddy/tags
-# Builder stage: rebuild Caddy with a Go toolchain past the stdlib
-# MIME-header DoS (CVE-2026-42504, fixed in Go 1.26.4). caddy:2.11.4-alpine
-# ships a binary built with Go 1.26.3 (verified via `trivy image` —
-# stdlib HIGH still present), so the vanilla image is vulnerable;
-# GOTOOLCHAIN makes `go build` fetch + use the patched toolchain,
-# recompiling caddy's stdlib. The version below is Renovate-tracked via a
-# Dockerfile.prod customManager (datasource=golang-version) in renovate.json.
-# Note: Caddy 2.11.4 already pins go-jose/v3 v3.0.5, so the earlier
-# `--replace` workaround for CVE-2026-34986 is retired.
+# Builder stage: recompile Caddy with xcaddy so the shipped binary can be
+# patched AHEAD of Caddy's release cadence. Three levers, each Renovate-tracked
+# by a Dockerfile.prod customManager in renovate.json:
+#   - GOTOOLCHAIN makes `go build` fetch + use the named Go, recompiling
+#     caddy's standard library (datasource=golang-version).
+#   - `xcaddy build vX.Y.Z` is the Caddy source version; it must equal the
+#     `caddy version` expectation in container-structure-test.yaml (same
+#     manager bumps both).
+#   - the two `--replace` flags lift modules Caddy declares as INDIRECT deps
+#     (datasource=go). Both stay within their major, so this is a transitive
+#     version lift, not an API change.
 #
-# The two `--replace` flags below patch transitive CVEs in modules Caddy
-# 2.11.4 declares as INDIRECT deps in its own go.mod, so they cannot be
-# fixed by bumping Caddy (2.11.4 is the latest release as of 2026-07-29):
-#   golang.org/x/text      v0.37.0 -> CVE-2026-56852 (norm.Iter infinite
-#                          loop), fixed in 0.39.0
-#   google.golang.org/grpc v1.81.0 -> GHSA-hrxh-6v49-42gf (xDS RBAC and
-#                          HTTP/2 vulns), fixed in 1.82.1
-# Both stay within their existing major, and both are indirect, so this is
-# a transitive version lift rather than an API change. `xcaddy --replace`
-# is the supported upstream way to apply a transitive CVE fix without
-# waiting on Caddy's release cadence — the same mechanism the retired
-# go-jose workaround used.
+# Why it exists (2026-07-29, caddy 2.11.4): the vanilla image shipped Go 1.26.3
+# with stdlib CVE-2026-42504 / CVE-2026-27145 / CVE-2026-39822, plus
+# golang.org/x/text v0.37.0 (CVE-2026-56852, fixed 0.39.0) and
+# google.golang.org/grpc v1.81.0 (GHSA-hrxh-6v49-42gf, fixed 1.82.1), and no
+# Caddy release fixed them.
 #
-# RETIRE THESE when a Caddy release ships the patched versions itself:
-# check `gh api repos/caddyserver/caddy/contents/go.mod?ref=<tag>`, and if
-# both are already >= the floors above, drop the flags and re-scan.
-# Both versions are Renovate-tracked via Dockerfile.prod customManagers
-# (datasource=go) in renovate.json, so the floors cannot silently rot.
+# Status (measured 2026-10-02, caddy 2.11.6, Trivy 0.74): the vanilla
+# caddy:2.11.6-alpine image scans 0 HIGH/CRITICAL (Go 1.26.8, x/text v0.42.0,
+# grpc v1.83.2), so this stage is currently forward-patching, not fixing a
+# known finding. Before RETIRING it, re-check on the then-current base:
+#   trivy image --severity CRITICAL,HIGH --ignore-unfixed caddy:<tag>-alpine
+#   gh api 'repos/caddyserver/caddy/contents/go.mod?ref=<tag>'
+# See "Upgrade Backlog" in CLAUDE.md for the keep-or-retire trade-off.
 FROM caddy:2.11.6-builder-alpine@sha256:b0a9daab97b413316e23238e5d466849b0ebbba8d411f7344e084d9f51fe973a AS caddy-builder
 ENV GOTOOLCHAIN=go1.27.1
 RUN xcaddy build v2.11.6 \
@@ -50,8 +47,8 @@ RUN xcaddy build v2.11.6 \
       --replace google.golang.org/grpc=google.golang.org/grpc@v1.84.0 \
       --output /caddy
 
-# Runtime stage: copy the rebuilt caddy binary over the one shipped in
-# caddy:2.11.4-alpine, then add envsubst + strip file caps + create the
+# Runtime stage: copy the rebuilt caddy binary over the one shipped in the
+# caddy alpine base, then add envsubst + strip file caps + create the
 # non-root app user. Keeping the same runtime base preserves the
 # image's working dir (/srv), default CMD, and OCI labels we add below.
 FROM caddy:2.11.6-alpine@sha256:c776e0c6413b544d0459665e54ec7b8b2a15000c0cbee8b254da0067b1d184ff AS server
