@@ -571,7 +571,15 @@ deps-prune-check: install
 RENOVATE_DLX := pnpm dlx --allow-build=re2 --package "renovate@$(RENOVATE_VERSION)"
 renovate-validate: deps
 	@$(RENOVATE_DLX) renovate-config-validator --strict renovate.json
-	@$(RENOVATE_DLX) renovate --platform=local
+	@# The dry-run looks up github-tags/github-releases deps; unauthenticated it
+	@# is rate-limited and warns "GitHub token is required". Borrow the gh CLI's
+	@# token when one is available and none was supplied. It travels in the
+	@# ENVIRONMENT only — never on a command line — and is not printed.
+	@if [ -z "$${GITHUB_COM_TOKEN:-}" ] && command -v gh >/dev/null 2>&1; then \
+		tok="$$(gh auth token 2>/dev/null || true)"; \
+		if [ -n "$$tok" ]; then export GITHUB_COM_TOKEN="$$tok"; fi; \
+	fi; \
+	$(RENOVATE_DLX) renovate --platform=local
 
 #cleanup-runs: @ Delete workflow runs older than 7 days (keeps newest 5 PER workflow; never deletes open-PR runs)
 cleanup-runs:
