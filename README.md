@@ -284,7 +284,7 @@ Run `make help` to see the full list. Grouped by purpose:
 | `make deps-act` / `deps-hadolint` / `deps-k8s` / `deps-trivy` / `deps-secrets` | Aliases for `deps` (kept for explicit-intent recipes) |
 | `make release` | Create and push a new tag (`vN.N.N`) |
 | `make tag-delete TAG=v0.0.1` | Delete a tag locally and remotely |
-| `make renovate-validate` | Validate Renovate configuration (strict config validator, then a local dry-run) |
+| `make renovate-validate` | Validate Renovate configuration (strict config validator, then a local dry-run; uses `GITHUB_COM_TOKEN`, or the `gh` CLI's token if unset, for GitHub lookups) |
 | `make cleanup-runs` | Delete workflow runs older than 7 days (keeps the newest 5 per workflow; never deletes open-PR runs) |
 | `make cleanup-caches` | Delete GitHub Actions caches from merged or deleted branches |
 | `make cleanup-images` | Delete untagged GHCR images (keeps 5 most recent) |
