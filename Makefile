@@ -42,17 +42,23 @@ CLOUD_PROVIDER_KIND_VERSION := v0.12.0
 
 # Renovate CLI version — pinned HERE (not in .mise.toml) so `mise install` does
 # not eagerly reinstall renovate's ~600-package npm tree on every `make deps`.
-# `renovate-validate` fetches it on demand via `mise exec`. Self-bump throttled
-# to weekly in renovate.json (matchDepNames:["renovate"]).
+# `renovate-validate` fetches it on demand via `pnpm dlx`. Self-bump limited to
+# a weekly window in renovate.json (matchDepNames:["renovate"]).
 # renovate: datasource=npm depName=renovate
 RENOVATE_VERSION := 44.115.9
 
 KIND_CLUSTER_NAME := $(APP_NAME)
 K8S_NAMESPACE     := web3
 
+# Operator overrides: a gitignored `.env` (copy of .env.example) is read HERE,
+# before the `?=` defaults, so it is authoritative for `make` too. `-include`
+# silently skips a missing file. Keep `.env` to plain `KEY=value` lines.
+-include .env
+
 # Operator-tunable runtime values (host/port/timeouts/poll counts). `?=` lets
 # the environment, CI, or a `.env` override them without editing this file.
-# Defaults mirror the values baked into k8s manifests + the Caddyfile.
+# Defaults mirror .env.example, the k8s manifests and the Caddyfile.
+VITE_RPCENDPOINT      ?= https://ethereum-rpc.publicnode.com
 APP_INTERNAL_PORT     ?= 8080
 HEALTHCHECK_HOST      ?= localhost
 ROLLOUT_TIMEOUT       ?= 180s
@@ -265,9 +271,12 @@ test-watch: install
 test-coverage: install
 	@pnpm test:coverage
 
-#integration-test: @ Run integration tests (real RPC; uses VITE_RPCENDPOINT from .env)
+#integration-test: @ Run integration tests against a real RPC (override: make integration-test VITE_RPCENDPOINT=<url>)
+# The endpoint is passed explicitly so the suite works on a clean checkout with
+# no `.env` (it used to throw "VITE_RPCENDPOINT must be set"). CI sets the same
+# variable in the job `env:`, which wins over this `?=` default.
 integration-test: install
-	@pnpm exec vitest run -c vitest.integration.config.ts
+	@VITE_RPCENDPOINT="$(VITE_RPCENDPOINT)" pnpm exec vitest run -c vitest.integration.config.ts
 
 #deps-playwright: @ Install Playwright Chromium browser for browser e2e
 # `pnpm exec`, NOT `pnpm dlx`: dlx resolves `playwright` from npm at its LATEST
@@ -429,6 +438,7 @@ ci-run: deps-act
 		--container-architecture linux/amd64 \
 		--pull=false \
 		--var ACT=true \
+		--var VITE_RPCENDPOINT="$(VITE_RPCENDPOINT)" \
 		--artifact-server-port $$PORT \
 		--artifact-server-path $$ARTIFACT_DIR
 
@@ -551,9 +561,17 @@ deps-prune-check: install
 		exit 1; \
 	fi
 
-#renovate-validate: @ Validate Renovate configuration (renovate fetched on demand via mise exec, not eagerly installed)
+#renovate-validate: @ Validate Renovate configuration (strict validator + local dry-run; renovate fetched on demand via pnpm dlx)
+# `pnpm dlx`, not `mise exec npm:renovate@…`: mise's npm backend enforces a
+# provenance no-downgrade policy and rejects a transitive dep of renovate
+# (@yarnpkg/libzip 3.2.2, published without the attestation 3.2.0 had), which
+# made this target fail on every renovate version. `--allow-build=re2` lets the
+# re2 native module build, so Renovate validates regexes with the engine it uses
+# in production instead of falling back to RegExp.
+RENOVATE_DLX := pnpm dlx --allow-build=re2 --package "renovate@$(RENOVATE_VERSION)"
 renovate-validate: deps
-	@mise exec "npm:renovate@$(RENOVATE_VERSION)" -- renovate --platform=local
+	@$(RENOVATE_DLX) renovate-config-validator --strict renovate.json
+	@$(RENOVATE_DLX) renovate --platform=local
 
 #cleanup-runs: @ Delete workflow runs older than 7 days (keeps newest 5 PER workflow; never deletes open-PR runs)
 cleanup-runs:

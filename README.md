@@ -21,7 +21,7 @@ Ships a **four-layer test pyramid** (Vitest unit/component + real-RPC integratio
 | Web3 | viem 2 (`createPublicClient`, `http`, `readContract`, `parseAbi`) |
 | i18n | i18next + react-i18next (English bundled) |
 | Testing | Vitest 4, React Testing Library, jsdom, Playwright (Chromium) |
-| Container | Builder: `node:24.17.0-alpine`; runtime: `caddy:2.11.4-alpine` (port 8080, runs as UID 1000; `cap_net_bind_service` stripped from the binary so it execs cleanly under `securityContext.capabilities.drop:[ALL]`) |
+| Container | Builder: `node:24-alpine`; runtime: `caddy:2-alpine` — exact tags and digests are pinned in `Dockerfile.prod` (port 8080, runs as UID 1000; `cap_net_bind_service` stripped from the binary so it execs cleanly under `securityContext.capabilities.drop:[ALL]`) |
 | Orchestration | Kubernetes (manifests under `k8s/`); local KinD via Makefile |
 | CI/CD | GitHub Actions, Renovate (PR automerge on green CI) |
 | Code quality | Prettier, hadolint, Trivy (fs+config), gitleaks |
@@ -47,7 +47,7 @@ make run        # start dev server, then open http://localhost:8080
 | [curl](https://curl.se/) | latest | Bootstraps `mise` in `make deps` |
 | [mise](https://mise.jdx.dev/) | latest | Manages every other tool (auto-installed by `make deps`) |
 
-`make deps` installs [mise](https://mise.jdx.dev/) into `~/.local/bin` (no sudo) and then runs `mise install` against the pinned `.mise.toml` to provision: Node.js, pnpm, hadolint, kubectl, kind, yq, Trivy, gitleaks, act, container-structure-test. (The Renovate CLI used by `make renovate-validate` is pinned separately as a Makefile constant and fetched on demand via `mise exec`, not installed here — this keeps `make deps` from reinstalling its large dependency tree on every run.)
+`make deps` installs [mise](https://mise.jdx.dev/) into `~/.local/bin` (no sudo) and then runs `mise install` against the pinned `.mise.toml` to provision: Node.js, pnpm, hadolint, kubectl, kind, yq, Trivy, gitleaks, act, container-structure-test. (The Renovate CLI used by `make renovate-validate` is pinned separately as a Makefile constant and fetched on demand via `pnpm dlx`, not installed here — this keeps `make deps` from reinstalling its large dependency tree on every run.)
 
 > The `image-*`, `docker-smoke-test`, `dast`, and `cleanup-*` targets shell out to host-provided tools that mise does not manage — `docker` (and, for the GHCR cleanup targets, [`gh`](https://cli.github.com/) + `jq`). Install those separately if you run those targets locally.
 
@@ -146,7 +146,7 @@ make image-build         # dev image (Node alpine + pnpm dev server)
 make image-build-prod    # production image (Caddy 2 on 8080)
 ```
 
-The production Dockerfile is three-stage: `node:24.17.0-alpine` builder → `caddy:2.11.4-builder-alpine` (runs `xcaddy build v2.11.4` with `GOTOOLCHAIN=go1.26.5` to rebuild Caddy's stdlib past three Go CVEs — CVE-2026-42504 (MIME DoS) and CVE-2026-27145 (crypto/x509 DoS), both fixed in 1.26.4, plus CVE-2026-39822 (`os.Root` symlink traversal), which needs 1.26.5 — the vanilla `caddy:2.11.4-alpine` binary ships Go 1.26.3 and is still flagged by Trivy; Caddy 2.11.4 already pins go-jose v3.0.5 so that `--replace` workaround is retired, but two new `--replace` flags patch transitive CVEs in modules caddy declares as *indirect* deps and that no caddy release yet fixes — `golang.org/x/text`→v0.40.0 (CVE-2026-56852) and `google.golang.org/grpc`→v1.82.1 (GHSA-hrxh-6v49-42gf); the rebuilt image scans **0 CVEs** on both the alpine layer and the caddy gobinary) → `caddy:2.11.4-alpine` runtime, with the rebuilt binary copied over the bundled one. Both Dockerfiles use `pnpm install --frozen-lockfile`, pin base images by SHA256 digest, and copy lockfiles before source for layer caching. The final image runs as non-root (UID 1000); the build adds `gettext` (for `envsubst`) and strips `cap_net_bind_service` from `/usr/bin/caddy` so the binary execs cleanly under `securityContext.capabilities.drop:[ALL]` in K8s.
+The production Dockerfile is three-stage: a `node` alpine builder → a `caddy` builder stage that recompiles Caddy with `xcaddy` → the `caddy` alpine runtime, with the rebuilt binary copied over the bundled one. **`Dockerfile.prod` is the source of truth for every version** (base tags + digests, the `xcaddy build` version, `GOTOOLCHAIN`, and the two `--replace` module pins); Renovate bumps them there, so they are deliberately not restated here. The rebuild exists so the shipped binary can be patched ahead of Caddy's release cadence: `GOTOOLCHAIN` recompiles it with a newer Go standard library, and `--replace` lifts `golang.org/x/text` and `google.golang.org/grpc`, two indirect dependencies that carried CVEs no Caddy release had fixed when the flags were added. As of the last measurement (2026-10-02, Caddy 2.11.6, Trivy 0.74) the vanilla upstream image already scans clean at HIGH/CRITICAL, so the rebuild is currently forward-patching rather than fixing a known finding — see the Upgrade Backlog in `CLAUDE.md` for the keep-or-retire trade-off. Both Dockerfiles use `pnpm install --frozen-lockfile`, pin base images by SHA256 digest, and copy lockfiles before source for layer caching. The final image runs as non-root (UID 1000); the build adds `gettext` (for `envsubst`) and strips `cap_net_bind_service` from `/usr/bin/caddy` so the binary execs cleanly under `securityContext.capabilities.drop:[ALL]` in K8s.
 
 ## Deployment
 
@@ -218,7 +218,7 @@ Run `make help` to see the full list. Grouped by purpose:
 | `make test` | Run unit + component tests (vitest, fast) |
 | `make test-watch` | Run tests in watch mode |
 | `make test-coverage` | Run tests with coverage report |
-| `make integration-test` | Run integration tests (real RPC via `VITE_RPCENDPOINT`) |
+| `make integration-test` | Run integration tests against a real RPC. Works without a `.env`; override with `make integration-test VITE_RPCENDPOINT=<url>` |
 | `make e2e` | Deploy to KinD + run curl-based e2e suite |
 | `make e2e-browser` | Run Playwright Chromium browser e2e against deployed SPA |
 | `make deps-playwright` | Install Playwright Chromium browser |
@@ -272,7 +272,7 @@ Run `make help` to see the full list. Grouped by purpose:
 | Target | Description |
 |--------|-------------|
 | `make ci` | Full pipeline: install + static-check + test + integration-test + build |
-| `make ci-run` | Run the GitHub Actions workflow locally via [act](https://github.com/nektos/act) (e2e + dast skipped via `vars.ACT`) |
+| `make ci-run` | Run the GitHub Actions workflow locally via [act](https://github.com/nektos/act) (e2e + dast skipped via `vars.ACT`). `VITE_RPCENDPOINT` is forwarded to the workflow, so `make ci-run VITE_RPCENDPOINT=<url>` points the integration job at another RPC |
 | `make ci-run-tag` | Run the workflow under act with a synthetic tag-push event (exercises the `docker` job + `dast`; cosign expected to fail under act, no OIDC) |
 
 ### Utilities
@@ -284,7 +284,7 @@ Run `make help` to see the full list. Grouped by purpose:
 | `make deps-act` / `deps-hadolint` / `deps-k8s` / `deps-trivy` / `deps-secrets` | Aliases for `deps` (kept for explicit-intent recipes) |
 | `make release` | Create and push a new tag (`vN.N.N`) |
 | `make tag-delete TAG=v0.0.1` | Delete a tag locally and remotely |
-| `make renovate-validate` | Validate Renovate configuration |
+| `make renovate-validate` | Validate Renovate configuration (strict config validator, then a local dry-run) |
 | `make cleanup-runs` | Delete workflow runs older than 7 days (keeps the newest 5 per workflow; never deletes open-PR runs) |
 | `make cleanup-caches` | Delete GitHub Actions caches from merged or deleted branches |
 | `make cleanup-images` | Delete untagged GHCR images (keeps 5 most recent) |

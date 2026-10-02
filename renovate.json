@@ -155,8 +155,9 @@
       "minimumReleaseAge": "3 days"
     },
     {
-      "description": "Throttle the local Renovate CLI pin (RENOVATE_VERSION in the Makefile, custom.regex manager / npm datasource). Renovate publishes several times a day; the manager-scoped npm.minimumReleaseAge does not apply to a custom.regex pin, so a 7-day buffer keeps this dev-only tool roughly weekly instead of opening a near-daily self-bump PR.",
+      "description": "Limit the local Renovate CLI pin (RENOVATE_VERSION in the Makefile, custom.regex manager / npm datasource) to ONE weekly window. Renovate publishes several times a day, and minimumReleaseAge does NOT throttle that: every release matures 7 days after it shipped, so a new one became eligible almost daily and the bot opened a self-bump PR each time (3 in one day on 2026-10-02, 12 in the fortnight before). Renovate's own docs say to use a schedule, not minimumReleaseAge, to slow a fast-releasing dependency. Branch creation/updates for this dep now happen only Monday 00:00-03:59 UTC (the same window lock file maintenance uses); the 7-day age stays as the supply-chain cooldown.",
       "matchDepNames": ["renovate"],
+      "schedule": ["* 0-3 * * 1"],
       "minimumReleaseAge": "7 days"
     }
   ]
