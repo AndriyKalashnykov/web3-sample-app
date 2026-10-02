@@ -32,8 +32,10 @@
     "minimumReleaseAge": "0 days"
   },
   "lockFileMaintenance": {
+    "description": "minimumReleaseAge is nulled HERE because a lock refresh carries no release timestamp, and under the default minimumReleaseAgeBehaviour=timestamp-required the npm block's 3-day age below then keeps renovate/stability-days pending FOREVER — the lock-maintenance PR sat green and unmerged for 3 months. The 3-day cooldown for a lock refresh is enforced by pnpm instead (minimumReleaseAge in pnpm-workspace.yaml), which is the only layer that sees the transitive versions actually resolved.",
     "enabled": true,
-    "automerge": true
+    "automerge": true,
+    "minimumReleaseAge": null
   },
   "npm": {
     "minimumReleaseAge": "3 days"

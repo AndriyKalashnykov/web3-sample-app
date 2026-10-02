@@ -1,4 +1,15 @@
 # pnpm settings (pnpm 10+ moved these out of package.json's "pnpm" field).
+
+# Supply-chain cooldown, in MINUTES (4320 = 3 days). pnpm refuses to resolve a
+# version younger than this, and `pnpm install --frozen-lockfile` FAILS on a
+# lockfile that contains one. It mirrors renovate.json's `npm.minimumReleaseAge:
+# "3 days"`: Renovate can only age-check the direct dependency it proposes; the
+# transitive versions a lock refresh picks are resolved by pnpm, so this is the
+# layer that enforces the cooldown for them (without it pnpm's built-in default
+# applies, measured at 24h on pnpm 12.8.1). Keep the two values equal.
+# Never commit a `minimumReleaseAgeExclude` entry pnpm auto-adds — pick an
+# older version instead.
+minimumReleaseAge: 4320
 overrides:
   # Force the transitive `ws` (pulled in via viem > isows) past the
   # GHSA-96hv-2xvq-fx4p DoS advisory (patched in 8.21.0). viem has no release
