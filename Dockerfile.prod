@@ -40,7 +40,7 @@ RUN pnpm build && mv dist/config.js dist/config.js.template
 #   trivy image --severity CRITICAL,HIGH --ignore-unfixed caddy:<tag>-alpine
 #   gh api 'repos/caddyserver/caddy/contents/go.mod?ref=<tag>'
 # See "Upgrade Backlog" in CLAUDE.md for the keep-or-retire trade-off.
-FROM caddy:2.11.6-builder-alpine@sha256:b0a9daab97b413316e23238e5d466849b0ebbba8d411f7344e084d9f51fe973a AS caddy-builder
+FROM caddy:2.11.6-builder-alpine@sha256:096ec6e825e219175bd5be64b5e7a4000977f701a2bcaab825621d9fb1e1154b AS caddy-builder
 ENV GOTOOLCHAIN=go1.27.1
 RUN xcaddy build v2.11.7 \
       --replace golang.org/x/text=golang.org/x/text@v0.42.0 \
@@ -51,7 +51,7 @@ RUN xcaddy build v2.11.7 \
 # caddy alpine base, then add envsubst + strip file caps + create the
 # non-root app user. Keeping the same runtime base preserves the
 # image's working dir (/srv), default CMD, and OCI labels we add below.
-FROM caddy:2.11.6-alpine@sha256:c776e0c6413b544d0459665e54ec7b8b2a15000c0cbee8b254da0067b1d184ff AS server
+FROM caddy:2.11.6-alpine@sha256:d44355d3c2149dc580ce2cac735955d1c08d3d00882c30489c241aa51a5c10d9 AS server
 
 # Build-time knobs (non-root identity, listen port, healthcheck host). Override
 # with `--build-arg` per environment; defaults match k8s/cm.yaml + the Caddyfile.
