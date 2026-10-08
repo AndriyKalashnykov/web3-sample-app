@@ -41,7 +41,7 @@ RUN pnpm build && mv dist/config.js dist/config.js.template
 #   gh api 'repos/caddyserver/caddy/contents/go.mod?ref=<tag>'
 # See "Upgrade Backlog" in CLAUDE.md for the keep-or-retire trade-off.
 FROM caddy:2.11.7-builder-alpine@sha256:80331d37e7d4d230f186f2707079e279f32552924f101ee659e8cae9f9877c26 AS caddy-builder
-ENV GOTOOLCHAIN=go1.27.1
+ENV GOTOOLCHAIN=go1.27.2
 RUN xcaddy build v2.11.7 \
       --replace golang.org/x/text=golang.org/x/text@v0.42.0 \
       --replace google.golang.org/grpc=google.golang.org/grpc@v1.84.0 \
