@@ -232,7 +232,7 @@ jobs:
 
       - name: Upload Playwright report
         if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: playwright-report
           path: |
@@ -267,7 +267,7 @@ jobs:
         # envelope (mime_type field) trips it. Real GHA accepts v7 fine —
         # match the e2e/dast vars.ACT pattern instead of pinning back to v4.
         if: ${{ vars.ACT != 'true' }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: dist
           path: dist/
@@ -388,7 +388,7 @@ jobs:
         # is consumed on real GHA only (cosign reads the workspace file directly,
         # not the artifact), so skipping the upload under act is safe.
         if: ${{ vars.ACT != 'true' }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: sbom-spdx
           path: sbom.spdx.json
@@ -505,7 +505,7 @@ jobs:
       # The SBOM is produced by docker-scan; fetch it to attest by digest.
       - name: Download SBOM
         if: ${{ vars.ACT != 'true' }}
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: sbom-spdx
 
@@ -612,7 +612,7 @@ jobs:
 
       - name: Upload DAST report
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: zap-baseline-report
           path: zap-output/
