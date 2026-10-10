@@ -43,7 +43,7 @@ RUN pnpm build && mv dist/config.js dist/config.js.template
 FROM caddy:2.11.7-builder-alpine@sha256:aa705b1e8e4bce41a7a30de934c1e00f6821667c1d1206424465065c92cb7674 AS caddy-builder
 ENV GOTOOLCHAIN=go1.27.2
 RUN xcaddy build v2.11.7 \
-      --replace golang.org/x/text=golang.org/x/text@v0.42.0 \
+      --replace golang.org/x/text=golang.org/x/text@v0.43.0 \
       --replace google.golang.org/grpc=google.golang.org/grpc@v1.84.0 \
       --output /caddy
 
