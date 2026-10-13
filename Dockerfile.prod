@@ -40,7 +40,7 @@ RUN pnpm build && mv dist/config.js dist/config.js.template
 #   trivy image --severity CRITICAL,HIGH --ignore-unfixed caddy:<tag>-alpine
 #   gh api 'repos/caddyserver/caddy/contents/go.mod?ref=<tag>'
 # See "Upgrade Backlog" in CLAUDE.md for the keep-or-retire trade-off.
-FROM caddy:2.11.7-builder-alpine@sha256:aa705b1e8e4bce41a7a30de934c1e00f6821667c1d1206424465065c92cb7674 AS caddy-builder
+FROM caddy:2.11.7-builder-alpine@sha256:d6161a2c82fd58b3205048958fb6246d0c5d892beee8a47e90944610c4efd100 AS caddy-builder
 ENV GOTOOLCHAIN=go1.27.2
 RUN xcaddy build v2.11.7 \
       --replace golang.org/x/text=golang.org/x/text@v0.43.0 \
