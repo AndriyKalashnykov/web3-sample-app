@@ -45,7 +45,7 @@ CLOUD_PROVIDER_KIND_VERSION := v0.12.0
 # `renovate-validate` fetches it on demand via `pnpm dlx`. Self-bump limited to
 # a weekly window in renovate.json (matchDepNames:["renovate"]).
 # renovate: datasource=npm depName=renovate
-RENOVATE_VERSION := 44.133.0
+RENOVATE_VERSION := 44.149.2
 
 KIND_CLUSTER_NAME := $(APP_NAME)
 K8S_NAMESPACE     := web3
