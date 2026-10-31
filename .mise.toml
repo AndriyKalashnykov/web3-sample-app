@@ -8,7 +8,7 @@
 # re-add the bad custom manager and re-introduce the duplicate-PR bug.
 
 # Node.js LTS — kept in sync with engines.node range in package.json.
-node = "24"
+node = "26"
 
 # pnpm package manager (canonical core mise backend).
 pnpm = "12.16.1"
