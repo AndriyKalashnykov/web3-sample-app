@@ -39,4 +39,4 @@ commandTests:
   - name: "caddy is the xcaddy rebuild pinned in Dockerfile.prod"
     command: "caddy"
     args: ["version"]
-    expectedOutput: ["v2.11.7.*"]
+    expectedOutput: ["v2.11.8.*"]
