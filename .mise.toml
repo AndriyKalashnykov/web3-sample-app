@@ -28,7 +28,7 @@ pnpm = "12.18.0"
 "aqua:kubernetes-sigs/kind" = "0.33.0"
 
 # Tracked: github-tags github.com/mikefarah/yq
-"aqua:mikefarah/yq" = "4.54.2"
+"aqua:mikefarah/yq" = "4.54.3"
 
 # Tracked: github-tags github.com/aquasecurity/trivy
 "aqua:aquasecurity/trivy" = "0.76.2"
